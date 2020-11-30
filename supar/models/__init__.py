@@ -3,11 +3,13 @@
 from .constituency import CRFConstituencyModel
 from .dependency import (BiaffineDependencyModel, CRF2oDependencyModel,
                          CRFDependencyModel, CRFNPDependencyModel)
-from .semantic_dependency import BiaffineSemanticDependencyModel
+from .semantic_dependency import (BiaffineSemanticDependencyModel,
+                                  LBPSemanticDependencyModel)
 
 __all__ = ['BiaffineDependencyModel',
            'CRFDependencyModel',
            'CRF2oDependencyModel',
            'CRFNPDependencyModel',
            'CRFConstituencyModel',
-           'BiaffineSemanticDependencyModel']
+           'BiaffineSemanticDependencyModel',
+           'LBPSemanticDependencyModel']

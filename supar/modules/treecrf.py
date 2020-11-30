@@ -8,11 +8,10 @@ from supar.utils.fn import stripe
 
 class MatrixTree(nn.Module):
     r"""
-    MatrixTree for calculating partition functions and marginals in :math:`O(n^3)` for directed spanning trees
-    (a.k.a. non-projective trees) by an adaptation of Kirchhoff's MatrixTree Theorem.
+    MatrixTree for calculating partitions and marginals of directed spanning trees (a.k.a. non-projective trees)
+    in :math:`O(n^3)` by an adaptation of Kirchhoff's MatrixTree Theorem.
 
-    It differs from the original paper in that marginals are computed via back-propagation
-    rather than matrix inversion.
+    It differs from the original paper in that marginals are computed via back-propagation rather than matrix inversion.
 
     References:
         - Terry Koo, Amir Globerson, Xavier Carreras and Michael Collins. 2007.
@@ -47,17 +46,17 @@ class MatrixTree(nn.Module):
         # double precision to prevent overflows
         scores = scores.double()
         logZ = self.matrix_tree(scores.requires_grad_(), mask)
-        probs = scores
+        marginals = scores
         # calculate the marginals
         if mbr:
-            probs, = autograd.grad(logZ, probs, retain_graph=training)
-        probs = probs.float()
+            marginals, = autograd.grad(logZ, marginals, retain_graph=training)
+        marginals = marginals.float()
         if target is None:
-            return probs
+            return marginals
 
         score = scores.gather(-1, target.unsqueeze(-1)).squeeze(-1)[mask].sum()
         loss = (logZ - score).float() / mask.sum()
-        return loss, probs
+        return loss, marginals
 
     def matrix_tree(self, scores, mask):
         lens = mask.sum(-1)
@@ -89,7 +88,7 @@ class MatrixTree(nn.Module):
 
 class CRFDependency(nn.Module):
     r"""
-    First-order TreeCRF for calculating partition functions and marginals in :math:`O(n^3)` for projective dependency trees.
+    First-order TreeCRF for calculating partitions and marginals of projective dependency trees in :math:`O(n^3)`.
 
     References:
         - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
@@ -130,12 +129,12 @@ class CRFDependency(nn.Module):
         # always enable the gradient computation of scores in order for the computation of marginals
         logZ = self.inside(scores.requires_grad_(), mask)
         # marginals are used for decoding, and can be computed by combining the inside pass and autograd mechanism
-        probs = scores
+        marginals = scores
         if mbr:
-            probs, = autograd.grad(logZ, scores, retain_graph=training)
+            marginals, = autograd.grad(logZ, scores, retain_graph=training)
 
         if target is None:
-            return probs
+            return marginals
         # the second inside process is needed if use partial annotation
         if partial:
             score = self.inside(scores, mask, target)
@@ -143,7 +142,7 @@ class CRFDependency(nn.Module):
             score = scores.gather(-1, target.unsqueeze(-1)).squeeze(-1)[mask].sum()
         loss = (logZ - score) / mask.sum()
 
-        return loss, probs
+        return loss, marginals
 
     def inside(self, scores, mask, cands=None):
         # the end position of each sentence in a batch
@@ -176,12 +175,10 @@ class CRFDependency(nn.Module):
                 ilr.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
             il = ir = ilr.permute(2, 0, 1).logsumexp(-1)
             # I(j->i) = logsumexp(C(i->r) + C(j->r+1)) + s(j->i), i <= r < j
-            # fill the w-th diagonal of the lower triangular part of s_i
-            # with I(j->i) of n spans
+            # fill the w-th diagonal of the lower triangular part of s_i with I(j->i) of n spans
             s_i.diagonal(-w).copy_(il + scores.diagonal(-w))
             # I(i->j) = logsumexp(C(i->r) + C(j->r+1)) + s(i->j), i <= r < j
-            # fill the w-th diagonal of the upper triangular part of s_i
-            # with I(i->j) of n spans
+            # fill the w-th diagonal of the upper triangular part of s_i with I(i->j) of n spans
             s_i.diagonal(w).copy_(ir + scores.diagonal(w))
 
             # C(j->i) = logsumexp(C(r->i) + I(j->r)), i <= r < j
@@ -200,7 +197,7 @@ class CRFDependency(nn.Module):
 
 class CRF2oDependency(nn.Module):
     r"""
-    Second-order TreeCRF for calculating partition functions and marginals in :math:`O(n^3)` for projective dependency trees.
+    Second-order TreeCRF for calculating partitions and marginals of projective dependency trees in :math:`O(n^3)`.
 
     References:
         - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
@@ -209,9 +206,6 @@ class CRF2oDependency(nn.Module):
     .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
         https://www.aclweb.org/anthology/2020.acl-main.302/
     """
-
-    def __init__(self):
-        super().__init__()
 
     @torch.enable_grad()
     def forward(self, scores, mask, target=None, mbr=True, partial=False):
@@ -242,36 +236,30 @@ class CRF2oDependency(nn.Module):
 
         s_arc, s_sib = scores
         training = s_arc.requires_grad
-        batch_size, seq_len, _ = s_arc.shape
         # always enable the gradient computation of scores in order for the computation of marginals
-        logZ = self.inside((s.requires_grad_() for s in scores), mask)
+        logZ = self.inside(*(s.requires_grad_() for s in scores), mask)
         # marginals are used for decoding, and can be computed by combining the inside pass and autograd mechanism
-        probs = s_arc
+        marginals = s_arc
         if mbr:
-            probs, = autograd.grad(logZ, s_arc, retain_graph=training)
+            marginals, = autograd.grad(logZ, s_arc, retain_graph=training)
 
         if target is None:
-            return probs
+            return marginals
         arcs, sibs = target
         # the second inside process is needed if use partial annotation
         if partial:
-            score = self.inside(scores, mask, arcs)
+            score = self.inside(s_arc, s_sib, mask, arcs)
         else:
-            arc_seq, sib_seq = arcs[mask], sibs[mask]
-            arc_mask, sib_mask = mask, sib_seq.gt(0)
-            sib_seq = sib_seq[sib_mask]
-            s_sib = s_sib[mask][torch.arange(len(arc_seq)), arc_seq]
-            s_arc = s_arc[arc_mask].gather(-1, arc_seq.unsqueeze(-1))
-            s_sib = s_sib[sib_mask].gather(-1, sib_seq.unsqueeze(-1))
+            s_arc = s_arc.gather(-1, arcs.unsqueeze(-1))[mask]
+            s_sib = s_sib.gather(-1, sibs.unsqueeze(-1))[sibs.gt(0)]
             score = s_arc.sum() + s_sib.sum()
         loss = (logZ - score) / mask.sum()
 
-        return loss, probs
+        return loss, marginals
 
-    def inside(self, scores, mask, cands=None):
+    def inside(self, s_arc, s_sib, mask, cands=None):
         # the end position of each sentence in a batch
         lens = mask.sum(1)
-        s_arc, s_sib = scores
         batch_size, seq_len, _ = s_arc.shape
         # [seq_len, seq_len, batch_size]
         s_arc = s_arc.permute(2, 1, 0)
@@ -350,7 +338,7 @@ class CRF2oDependency(nn.Module):
 
 class CRFConstituency(nn.Module):
     r"""
-    TreeCRF for calculating partition functions and marginals in :math:`O(n^3)` for constituency trees.
+    TreeCRF for calculating partitions and marginals of constituency trees in :math:`O(n^3)`.
 
     References:
         - Yu Zhang, houquan Zhou and Zhenghua Li. 2020.
@@ -385,14 +373,14 @@ class CRFConstituency(nn.Module):
         # always enable the gradient computation of scores in order for the computation of marginals
         logZ = self.inside(scores.requires_grad_(), mask)
         # marginals are used for decoding, and can be computed by combining the inside pass and autograd mechanism
-        probs = scores
+        marginals = scores
         if mbr:
-            probs, = autograd.grad(logZ, scores, retain_graph=training)
+            marginals, = autograd.grad(logZ, scores, retain_graph=training)
         if target is None:
-            return probs
+            return marginals
         loss = (logZ - scores[mask & target].sum()) / mask[:, 0].sum()
 
-        return loss, probs
+        return loss, marginals
 
     def inside(self, scores, mask):
         lens = mask[:, 0].sum(-1)

@@ -94,6 +94,8 @@ class Triaffine(nn.Module):
     Args:
         n_in (int):
             The size of the input feature.
+        n_out (int):
+            The number of output channels.
         bias_x (bool):
             If ``True``, adds a bias term for tensor :math:`x`. Default: ``False``.
         bias_y (bool):
@@ -105,18 +107,19 @@ class Triaffine(nn.Module):
         https://www.aclweb.org/anthology/P19-1454/
     """
 
-    def __init__(self, n_in, bias_x=False, bias_y=False):
+    def __init__(self, n_in, n_out=1, bias_x=False, bias_y=False):
         super().__init__()
 
         self.n_in = n_in
+        self.n_out = n_out
         self.bias_x = bias_x
         self.bias_y = bias_y
-        self.weight = nn.Parameter(torch.Tensor(n_in+bias_x, n_in, n_in+bias_y))
+        self.weight = nn.Parameter(torch.Tensor(n_out, n_in+bias_x, n_in, n_in+bias_y))
 
         self.reset_parameters()
 
     def __repr__(self):
-        s = f"n_in={self.n_in}"
+        s = f"n_in={self.n_in}, n_out={self.n_out}"
         if self.bias_x:
             s += f", bias_x={self.bias_x}"
         if self.bias_y:
@@ -136,15 +139,18 @@ class Triaffine(nn.Module):
 
         Returns:
             ~torch.Tensor:
-                A scoring tensor of shape ``[batch_size, seq_len, seq_len, seq_len]``.
+                A scoring tensor of shape ``[batch_size, n_out, seq_len, seq_len, seq_len]``.
+                If ``n_out=1``, the dimension for ``n_out`` will be squeezed automatically.
         """
 
         if self.bias_x:
             x = torch.cat((x, torch.ones_like(x[..., :1])), -1)
         if self.bias_y:
             y = torch.cat((y, torch.ones_like(y[..., :1])), -1)
-        w = torch.einsum('bzk,ikj->bzij', z, self.weight)
+        w = torch.einsum('bzk,oikj->bozij', z, self.weight)
         # [batch_size, seq_len, seq_len, seq_len]
-        s = torch.einsum('bxi,bzij,byj->bzxy', x, w, y)
+        s = torch.einsum('bxi,bozij,byj->bozxy', x, w, y)
+        # remove dim 1 if n_out == 1
+        s = s.squeeze(1)
 
         return s

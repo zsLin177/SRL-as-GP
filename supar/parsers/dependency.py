@@ -9,7 +9,7 @@ from supar.models import (BiaffineDependencyModel, CRF2oDependencyModel,
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import Field, SubwordField
+from supar.utils.field import ChartField, Field, SubwordField
 from supar.utils.fn import ispunct
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.metric import AttachmentMetric
@@ -904,7 +904,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
         else:
             FEAT = Field('tags', bos=bos)
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
-        SIB = Field('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)
+        SIB = ChartField('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)
         REL = Field('rels', bos=bos)
         if args.feat in ('char', 'bert'):
             transform = CoNLL(FORM=(WORD, FEAT), HEAD=(ARC, SIB), DEPREL=REL)

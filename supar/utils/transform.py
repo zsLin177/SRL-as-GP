@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from collections.abc import Iterable
+from itertools import chain
 
 import nltk
 from supar.utils.logging import get_logger, progress_bar
@@ -196,19 +197,17 @@ class CoNLL(Transform):
 
     @classmethod
     def get_sibs(cls, sequence):
-        sibs = [-1] * (len(sequence) + 1)
+        sibs = [[0] * (len(sequence) + 1) for _ in range(len(sequence) + 1)]
         heads = [0] + [int(i) for i in sequence]
 
-        for i in range(1, len(heads)):
-            hi = heads[i]
-            for j in range(i + 1, len(heads)):
-                hj = heads[j]
+        for i, hi in enumerate(heads[1:], 1):
+            for j, hj in enumerate(heads[i+1:], i + 1):
                 di, dj = hi - i, hj - j
                 if hi >= 0 and hj >= 0 and hi == hj and di * dj > 0:
                     if abs(di) > abs(dj):
-                        sibs[i] = j
+                        sibs[i][hi] = j
                     else:
-                        sibs[j] = i
+                        sibs[j][hj] = i
                     break
         return sibs[1:]
 
@@ -220,6 +219,20 @@ class CoNLL(Transform):
                 for pair in s.split('|'):
                     edges[i][int(pair.split(':')[0])] = 1
         return edges
+
+    @classmethod
+    def get_sib_edges(cls, sequence):
+        edges = cls.get_edges(sequence)
+        sibs = [[[0]*(len(sequence)+1) for _ in range(len(sequence)+1)] for _ in range(len(sequence)+1)]
+        for i in range(len(sibs)):
+            for j in range(len(sibs)):
+                if edges[i][j] != 1:
+                    break
+                for k in chain(range(i+1, j), reversed(range(j+1, i))):
+                    if edges[k][j] == 1:
+                        sibs[i][j][k] = 1
+                        break
+        return sibs
 
     @classmethod
     def get_labels(cls, sequence):
