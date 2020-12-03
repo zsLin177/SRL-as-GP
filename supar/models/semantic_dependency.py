@@ -539,8 +539,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         """
 
         edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.lbp((s_egde, s_sib), mask, (edges, sibs))
-        # edge_loss = self.criterion(marginals[mask], edges[mask])
+        edge_loss, marginals = self.lbp((s_egde, s_sib), mask, edges)
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
         return loss, marginals

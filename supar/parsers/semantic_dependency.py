@@ -420,7 +420,7 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
     @classmethod
     def build(cls,
               path,
-              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12, 'weight_decay': 3e-9},
+              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12},
               scheduler_args={'gamma': .75**(1/5000)},
               min_freq=7,
               fix_len=20,

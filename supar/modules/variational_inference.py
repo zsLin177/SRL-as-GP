@@ -29,13 +29,10 @@ class LoopyBeliefPropagation(nn.Module):
                 Tuple of two tensors `s_edge` and `s_sib`.
                 `s_edge` (``[batch_size, seq_len, seq_len, 2]``) holds Scores of all possible dependent-head pairs.
                 `s_sib` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-sibling triples.
-            mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
+            mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask to avoid aggregation on padding tokens.
-                The first column serving as pseudo words for roots should be ``False``.
-            target (~torch.LongTensor): ``[batch_size, seq_len]``.
-                Tensors of gold-standard dependent-head pairs and dependent-head-sibling triples.
-                If partially annotated, the unannotated positions should be filled with -1.
-                Default: ``None``.
+            target (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
+                A Tensor of gold-standard dependent-head pairs. Default: ``None``.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
@@ -44,15 +41,11 @@ class LoopyBeliefPropagation(nn.Module):
         """
 
         s_edge, s_sib = scores
-        logZ, marginals = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
+        marginals = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
             return marginals
-        edges, sibs = target
-        s_edge = s_edge.gather(-1, edges.unsqueeze(-1))[mask]
-        s_sib = s_sib[sibs.gt(0)]
-        score = s_edge.sum() + s_sib.sum()
-        loss = (logZ - score) / mask[:, 1].sum(-1)
+        loss = -marginals.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
 
         return loss, marginals
 
@@ -77,7 +70,9 @@ class LoopyBeliefPropagation(nn.Module):
         for _ in range(self.max_iter):
             # b(ij) = p(ij) + sum(m(ik->ij)), k
             b = (p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)) * mask.unsqueeze(-1)
+            b = b - b.logsumexp(-1, True)
             # m(ik->ij) = logsumexp(p(ij->ik) + b(ik) - m(ij->ik)) - m(ik->)
-            m_sib = (p_sib + b.unsqueeze(1) - m_sib).logsumexp(0)
+            m_sib = (p_sib + b.unsqueeze(1) - m_sib).logsumexp(0).transpose(1, 2)
             m_sib = m_sib - m_sib.logsumexp(-1, True)
-        return b[1, 0].logsumexp(-1).sum(), b.permute(2, 1, 0, 3)
+
+        return b.permute(2, 1, 0, 3)
