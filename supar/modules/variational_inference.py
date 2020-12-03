@@ -40,7 +40,6 @@ class LoopyBeliefPropagation(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        s_edge, s_sib = scores
         marginals = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
