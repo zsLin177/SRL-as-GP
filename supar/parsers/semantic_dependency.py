@@ -39,7 +39,7 @@ class BiaffineSemanticDependencyParser(Parser):
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.SIB, self.LABEL = self.transform.PHEAD
+        self.EDGE, self.LABEL = self.transform.PHEAD
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
         r"""
@@ -284,7 +284,7 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.SIB, self.LABEL = self.transform.PHEAD
+        self.EDGE, self.LABEL = self.transform.PHEAD
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
         r"""
@@ -352,14 +352,14 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, sibs, labels in bar:
+        for words, *feats, edges, labels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, sibs, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
@@ -376,12 +376,12 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         total_loss, metric = 0, ChartMetric()
 
-        for words, *feats, edges, sibs, labels in loader:
+        for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, sibs, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, labels, mask)
             total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -474,9 +474,8 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
                                 tokenize=tokenizer.tokenize)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
-        SIB = ChartField('sibs', use_vocab=False, fn=CoNLL.get_sib_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, SIB, LABEL))
+        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
         WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))

@@ -221,20 +221,6 @@ class CoNLL(Transform):
         return edges
 
     @classmethod
-    def get_sib_edges(cls, sequence):
-        edges = cls.get_edges(sequence)
-        sibs = [[[0]*(len(sequence)+1) for _ in range(len(sequence)+1)] for _ in range(len(sequence)+1)]
-        for i in range(len(sibs)):
-            for j in range(len(sibs)):
-                if edges[i][j] != 1:
-                    break
-                for k in chain(range(i+1, j), reversed(range(j+1, i))):
-                    if edges[k][j] == 1:
-                        sibs[i][j][k] = 1
-                        break
-        return sibs
-
-    @classmethod
     def get_labels(cls, sequence):
         labels = [[None]*(len(sequence)+1) for _ in range(len(sequence)+1)]
         for i, s in enumerate(sequence, 1):

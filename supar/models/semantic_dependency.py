@@ -515,7 +515,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
 
         return s_egde, s_sib, s_label
 
-    def loss(self, s_egde, s_sib, s_label, edges, sibs, labels, mask):
+    def loss(self, s_egde, s_sib, s_label, edges, labels, mask):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
@@ -526,8 +526,6 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
                 Scores of all possible labels on each edge.
             edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard edges.
-            sibs (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
-                The tensor of gold-standard siblings.
             labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard labels.
             mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
