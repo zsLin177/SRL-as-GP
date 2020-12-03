@@ -21,6 +21,9 @@ class LoopyBeliefPropagation(nn.Module):
 
         self.max_iter = max_iter
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(max_iter={self.max_iter})"
+
     @torch.enable_grad()
     def forward(self, scores, mask, target=None):
         r"""
