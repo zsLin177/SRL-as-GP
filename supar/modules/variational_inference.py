@@ -6,7 +6,7 @@ import torch.nn as nn
 
 class LoopyBeliefPropagation(nn.Module):
     r"""
-    Loopy Belief Propagation for approximately calculating partitions and marginals of semantic dependency trees.
+    Loopy Belief Propagation for approximately calculating marginals of semantic dependency trees.
 
     References:
         - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
@@ -53,9 +53,9 @@ class LoopyBeliefPropagation(nn.Module):
 
     def belief_propagation(self, s_edge, s_sib, mask):
         # [seq_len, seq_len, batch_size]
-        mask = mask.permute(1, 2, 0)
+        mask = mask.permute(2, 1,  0)
         # [seq_len, seq_len, seq_len, batch_size]
-        sib_mask = (mask.unsqueeze(0) & mask.unsqueeze(1)).permute(2, 1, 0, 3)
+        sib_mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).permute(0, 1, 2, 3)
         # log potentials for unary and binary factors, i.e., edges and siblings
         # [seq_len, seq_len, batch_size, 2], (h->m)
         p_edge = s_edge.permute(2, 1, 0, 3)
