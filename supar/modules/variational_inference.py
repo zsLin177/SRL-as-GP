@@ -52,10 +52,14 @@ class LoopyBeliefPropagation(nn.Module):
         return loss, marginals
 
     def belief_propagation(self, s_edge, s_sib, mask):
-        # [seq_len, seq_len, batch_size]
-        mask = mask.permute(2, 1,  0)
-        # [seq_len, seq_len, seq_len, batch_size]
+        _, seq_len, _ = mask.shape
+        heads, dependents = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        # [seq_len, seq_len, batch_size], (h->m)
+        mask = mask.permute(2, 1, 0)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         sib_mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).permute(0, 1, 2, 3)
+        sib_mask = sib_mask & (heads.unsqueeze(-1) < heads.new_tensor(range(seq_len))).unsqueeze(-1)
+        sib_mask = sib_mask & (dependents.unsqueeze(-1) > dependents.new_tensor(range(seq_len))).unsqueeze(-1)
         # log potentials for unary and binary factors, i.e., edges and siblings
         # [seq_len, seq_len, batch_size, 2], (h->m)
         p_edge = s_edge.permute(2, 1, 0, 3)
@@ -70,7 +74,7 @@ class LoopyBeliefPropagation(nn.Module):
         m_sib = torch.zeros_like(p_sib[0])
 
         for _ in range(self.max_iter):
-            # b(ij) = p(ij) + sum(m(ik->ij)), k
+            # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
             b = (p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)) * mask.unsqueeze(-1)
             b = b - b.logsumexp(-1, True)
             # m(ik->ij) = logsumexp(p(ij->ik) + b(ik) - m(ij->ik)) - m(ik->)
