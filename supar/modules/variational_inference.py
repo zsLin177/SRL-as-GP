@@ -43,13 +43,13 @@ class LoopyBeliefPropagation(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
+        log_beliefs = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
-            return marginals
-        loss = -marginals.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
+            return log_beliefs.exp()
+        loss = -log_beliefs.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
 
-        return loss, marginals
+        return loss, log_beliefs.exp()
 
     def belief_propagation(self, s_edge, s_sib, mask):
         _, seq_len, _ = mask.shape
@@ -58,8 +58,8 @@ class LoopyBeliefPropagation(nn.Module):
         mask = mask.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         sib_mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).permute(0, 1, 2, 3)
-        sib_mask = sib_mask & (heads.unsqueeze(-1) < heads.new_tensor(range(seq_len))).unsqueeze(-1)
-        sib_mask = sib_mask & (dependents.unsqueeze(-1) > dependents.new_tensor(range(seq_len))).unsqueeze(-1)
+        sib_mask = sib_mask & heads.unsqueeze(-1).ne(heads.new_tensor(range(seq_len))).unsqueeze(-1)
+        sib_mask = sib_mask & dependents.unsqueeze(-1).ne(dependents.new_tensor(range(seq_len))).unsqueeze(-1)
         # log potentials for unary and binary factors, i.e., edges and siblings
         # [seq_len, seq_len, batch_size, 2], (h->m)
         p_edge = s_edge.permute(2, 1, 0, 3)
@@ -75,10 +75,9 @@ class LoopyBeliefPropagation(nn.Module):
 
         for _ in range(self.max_iter):
             # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
-            b = (p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)) * mask.unsqueeze(-1)
-            b = b - b.logsumexp(-1, True)
+            b = p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)
             # m(ik->ij) = logsumexp(p(ij->ik) + b(ik) - m(ij->ik)) - m(ik->)
-            m_sib = (p_sib + b.unsqueeze(1) - m_sib).logsumexp(0).transpose(1, 2)
-            m_sib = m_sib - m_sib.logsumexp(-1, True)
+            m_sib = ((p_sib + b.unsqueeze(1) - m_sib).logsumexp(0).transpose(1, 2)).log_softmax(-1)
+        b = p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)
 
-        return b.permute(2, 1, 0, 3)
+        return b.permute(2, 1, 0, 3).log_softmax(-1)
