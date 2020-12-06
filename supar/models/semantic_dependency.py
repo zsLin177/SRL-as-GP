@@ -426,15 +426,17 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         # the MLP layers
         self.mlp_edge_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_unary, dropout=edge_mlp_dropout, activation=False)
         self.mlp_edge_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_unary, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_sib_s = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_binary, dropout=edge_mlp_dropout, activation=False)
         self.mlp_sib_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_binary, dropout=edge_mlp_dropout, activation=False)
         self.mlp_sib_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_binary, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_sib_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_binary, dropout=edge_mlp_dropout, activation=False)
         self.mlp_label_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
         self.mlp_label_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
 
         # the Biaffine layers
         self.edge_attn = Biaffine(n_in=n_mlp_unary, n_out=2, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
+        self.cop_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
+        self.grd_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.lbp = LoopyBeliefPropagation(max_iter)
         self.criterion = nn.CrossEntropyLoss()
@@ -499,9 +501,9 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         # apply MLPs to the BiLSTM output states
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
-        sib_s = self.mlp_sib_s(x)
         sib_d = self.mlp_sib_d(x)
         sib_h = self.mlp_sib_h(x)
+        sib_g = self.mlp_sib_g(x)
         label_h = self.mlp_label_h(x)
         label_d = self.mlp_label_d(x)
         label_h = self.mlp_label_h(x)
@@ -509,19 +511,27 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         # [batch_size, seq_len, seq_len, 2]
         s_egde = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
         # [batch_size, seq_len, seq_len, n_labels]
-        s_sib = self.sib_attn(sib_s, sib_d, sib_h).permute(0, 3, 1, 2)
+        s_sib = self.sib_attn(sib_d, sib_d, sib_h).permute(0, 3, 1, 2)
+        # [batch_size, seq_len, seq_len, n_labels]
+        s_cop = self.cop_attn(sib_h, sib_d, sib_h).permute(0, 3, 1, 2)
+        # [batch_size, seq_len, seq_len, n_labels]
+        s_grd = self.grd_attn(sib_g, sib_d, sib_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_egde, s_sib, s_label
+        return s_egde, s_sib, s_cop, s_grd, s_label
 
-    def loss(self, s_egde, s_sib, s_label, edges, labels, mask):
+    def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, edges, labels, mask):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
                 Scores of all possible dependent-head-sibling triples.
+            s_cop (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
+                Scores of all possible dependent-head-coparent triples.
+            s_grd (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
+                Scores of all possible dependent-head-grandparent triples.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
             edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
@@ -537,7 +547,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         """
 
         edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.lbp((s_egde, s_sib), mask, edges)
+        edge_loss, marginals = self.lbp((s_egde, s_sib, s_cop, s_grd), mask, edges)
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
         return loss, marginals

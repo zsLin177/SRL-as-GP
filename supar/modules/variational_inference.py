@@ -29,9 +29,11 @@ class LoopyBeliefPropagation(nn.Module):
         r"""
         Args:
             scores (~torch.Tensor, ~torch.Tensor):
-                Tuple of two tensors `s_edge` and `s_sib`.
+                Tuple of four tensors `s_edge`, `s_sib`, `s_cop` and `s_grd`.
                 `s_edge` (``[batch_size, seq_len, seq_len, 2]``) holds Scores of all possible dependent-head pairs.
                 `s_sib` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-sibling triples.
+                `s_cop` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-coparent triples.
+                `s_grd` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-grandparent triples.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask to avoid aggregation on padding tokens.
             target (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
@@ -44,40 +46,59 @@ class LoopyBeliefPropagation(nn.Module):
         """
 
         log_beliefs = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
+        marginals = log_beliefs.exp()
 
         if target is None:
-            return log_beliefs.exp()
+            return marginals
         loss = -log_beliefs.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
 
-        return loss, log_beliefs.exp()
+        return loss, marginals
 
-    def belief_propagation(self, s_edge, s_sib, mask):
-        _, seq_len, _ = mask.shape
+    def belief_propagation(self, s_edge, s_sib, s_cop, s_grd, mask):
+        batch_size, seq_len, _ = mask.shape
         heads, dependents = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
         # [seq_len, seq_len, batch_size], (h->m)
         mask = mask.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        sib_mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).permute(0, 1, 2, 3)
-        sib_mask = sib_mask & heads.unsqueeze(-1).ne(heads.new_tensor(range(seq_len))).unsqueeze(-1)
-        sib_mask = sib_mask & dependents.unsqueeze(-1).ne(dependents.new_tensor(range(seq_len))).unsqueeze(-1)
-        # log potentials for unary and binary factors, i.e., edges and siblings
+        mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
+        mask2o = mask2o & heads.unsqueeze(-1).ne(heads.new_tensor(range(seq_len))).unsqueeze(-1)
+        mask2o = mask2o & dependents.unsqueeze(-1).ne(dependents.new_tensor(range(seq_len))).unsqueeze(-1)
+        # log potentials of unary and binary factors
         # [seq_len, seq_len, batch_size, 2], (h->m)
         p_edge = s_edge.permute(2, 1, 0, 3)
-        # [2, seq_len, seq_len, seq_len, batch_size, 2], (h->m->s)
-        p_sib = (s_sib.unsqueeze(-1).unsqueeze(-1) * s_sib.new_tensor([[0, 0], [0, 1]])).permute(4, 2, 1, 3, 0, 5)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
+        p_sib = s_sib.permute(2, 1, 3, 0)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->c)
+        p_cop = s_cop.permute(2, 1, 3, 0)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
+        p_grd = s_grd.permute(2, 1, 3, 0)
 
         # log beliefs
         # [seq_len, seq_len, batch_size, 2], (h->m)
-        b = torch.zeros_like(p_edge)
-        # log messages for siblings
+        b = p_edge.new_zeros(seq_len, seq_len, batch_size, 2)
+        # log messages of siblings
         # [seq_len, seq_len, seq_len, batch_size, 2], (h->m->s)
-        m_sib = torch.zeros_like(p_sib[0])
+        m_sib = p_sib.new_zeros(seq_len, seq_len, seq_len, batch_size, 2)
+        # log messages of co-parents
+        # [seq_len, seq_len, seq_len, batch_size, 2], (h->m->c)
+        m_cop = p_cop.new_zeros(seq_len, seq_len, seq_len, batch_size, 2)
+        # log messages of grand-parents
+        # [seq_len, seq_len, seq_len, batch_size, 2], (h->m->g)
+        m_grd = p_grd.new_zeros(seq_len, seq_len, seq_len, batch_size, 2)
 
         for _ in range(self.max_iter):
             # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
-            b = p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)
-            # m(ik->ij) = logsumexp(p(ij->ik) + b(ik) - m(ij->ik)) - m(ik->)
-            m_sib = ((p_sib + b.unsqueeze(1) - m_sib).logsumexp(0).transpose(1, 2)).log_softmax(-1)
-        b = p_edge + (m_sib * sib_mask.unsqueeze(-1)).sum(2)
+            b = p_edge + ((m_sib + m_cop + m_grd) * mask2o.unsqueeze(-1)).sum(2)
+            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + p(ij->ik)) - m(ik->)
+            m = b.unsqueeze(2) - m_sib
+            m_sib = torch.stack((m.logsumexp(-1), torch.stack((m[..., 0], m[..., 1] + p_sib)).logsumexp(0)), -1)
+            m_sib = m_sib.transpose(1, 2).log_softmax(-1)
+            m = b.unsqueeze(2) - m_cop
+            m_cop = torch.stack((m.logsumexp(-1), torch.stack((m[..., 0], m[..., 1] + p_sib)).logsumexp(0)), -1)
+            m_cop = m_cop.transpose(1, 2).log_softmax(-1)
+            m = b.unsqueeze(2) - m_grd
+            m_grd = torch.stack((m.logsumexp(-1), torch.stack((m[..., 0], m[..., 1] + p_sib)).logsumexp(0)), -1)
+            m_grd = m_grd.transpose(1, 2).log_softmax(-1)
+        b = p_edge + ((m_sib + m_cop + m_grd) * mask2o.unsqueeze(-1)).sum(2)
 
         return b.permute(2, 1, 0, 3).log_softmax(-1)

@@ -358,8 +358,8 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, labels, mask)
+            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
@@ -380,8 +380,8 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_label, edges, labels, mask)
+            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
             total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -402,8 +402,8 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_label = self.model(words, feats)
-            s_edge = self.model.lbp((s_edge, s_sib), mask)
+            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            s_edge = self.model.lbp((s_edge, s_sib, s_cop, s_grd), mask)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
             charts.extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
