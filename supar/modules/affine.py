@@ -42,7 +42,9 @@ class Biaffine(nn.Module):
         self.reset_parameters()
 
     def __repr__(self):
-        s = f"n_in={self.n_in}, n_out={self.n_out}"
+        s = f"n_in={self.n_in}"
+        if self.n_out > 1:
+            s += f", n_out={self.n_out}"
         if self.bias_x:
             s += f", bias_x={self.bias_x}"
         if self.bias_y:
@@ -119,7 +121,9 @@ class Triaffine(nn.Module):
         self.reset_parameters()
 
     def __repr__(self):
-        s = f"n_in={self.n_in}, n_out={self.n_out}"
+        s = f"n_in={self.n_in}"
+        if self.n_out > 1:
+            s += f", n_out={self.n_out}"
         if self.bias_x:
             s += f", bias_x={self.bias_x}"
         if self.bias_y:

@@ -2,8 +2,8 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import (LSTM, MLP, BertEmbedding, Biaffine, CharLSTM,
-                           LoopyBeliefPropagation, Triaffine)
+from supar.modules import (LBP, LSTM, MFVI, MLP, BertEmbedding, Biaffine,
+                           CharLSTM, Triaffine)
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -274,9 +274,9 @@ class BiaffineSemanticDependencyModel(nn.Module):
         return s_egde.argmax(-1), s_label.argmax(-1)
 
 
-class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
+class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
     r"""
-    The implementation of Semantic Dependency Parser with Loopy Belief Propagation.
+    The implementation of Semantic Dependency Parser using Variational Inference.
 
     References:
         - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
@@ -340,6 +340,8 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
             The dropout ratio of edge MLP layers. Default: .25.
         label_mlp_dropout (float):
             The dropout ratio of label MLP layers. Default: .33.
+        inference (str):
+            Approximate inference methods. Default: 'mfvi'.
         max_iter (int):
             Max iteration times for Loopy Belief Propagation. Default: 3.
         interpolation (int):
@@ -380,6 +382,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
                  n_mlp_label=600,
                  edge_mlp_dropout=.25,
                  label_mlp_dropout=.33,
+                 inference='mfvi',
                  max_iter=3,
                  interpolation=0.1,
                  pad_index=0,
@@ -433,12 +436,12 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         self.mlp_label_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
 
         # the Biaffine layers
-        self.edge_attn = Biaffine(n_in=n_mlp_unary, n_out=2, bias_x=True, bias_y=True)
+        self.edge_attn = Biaffine(n_in=n_mlp_unary, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
-        self.lbp = LoopyBeliefPropagation(max_iter)
+        self.vi = MFVI(max_iter) if inference == 'mfvi' else LBP(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -461,8 +464,8 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
 
         Returns:
             ~torch.Tensor, ~torch.Tensor, ~torch.Tensor:
-                Scores of all possible edges of shape ``[batch_size, seq_len, seq_len, 2]``,
-                dependent-head-sibling triples of shape ``[batch_size, seq_len, seq_len, seq_len, 2]`` and
+                Scores of all possible edges of shape ``[batch_size, seq_len, seq_len]``,
+                dependent-head-sibling triples of shape ``[batch_size, seq_len, seq_len, seq_len]`` and
                 all possible labels on each edge of shape ``[batch_size, seq_len, seq_len, n_labels]``.
         """
 
@@ -508,12 +511,14 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         label_d = self.mlp_label_d(x)
         label_h = self.mlp_label_h(x)
 
-        # [batch_size, seq_len, seq_len, 2]
-        s_egde = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
+        # [batch_size, seq_len, seq_len]
+        s_egde = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, n_labels]
-        s_sib = self.sib_attn(sib_d, sib_d, sib_h).permute(0, 3, 1, 2)
+        s_sib = self.sib_attn(sib_d, sib_d, sib_h).triu_()
+        s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_labels]
-        s_cop = self.cop_attn(sib_h, sib_d, sib_h).permute(0, 3, 1, 2)
+        s_cop = self.cop_attn(sib_h, sib_d, sib_h).permute(0, 3, 1, 2).triu_()
+        s_cop = s_cop + s_cop.transpose(-1, -2)
         # [batch_size, seq_len, seq_len, n_labels]
         s_grd = self.grd_attn(sib_g, sib_d, sib_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_labels]
@@ -524,7 +529,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
     def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, edges, labels, mask):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
                 Scores of all possible dependent-head-sibling triples.
@@ -547,7 +552,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
         """
 
         edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.lbp((s_egde, s_sib, s_cop, s_grd), mask, edges)
+        edge_loss, marginals = self.vi((s_egde, s_sib, s_cop, s_grd), mask, edges)
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
         return loss, marginals
@@ -555,7 +560,7 @@ class LBPSemanticDependencyModel(BiaffineSemanticDependencyModel):
     def decode(self, s_egde, s_label):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.

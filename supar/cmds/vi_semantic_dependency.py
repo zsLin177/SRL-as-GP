@@ -2,13 +2,13 @@
 
 import argparse
 
-from supar import LBPSemanticDependencyParser
+from supar import VISemanticDependencyParser
 from supar.cmds.cmd import parse
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Create LBP Semantic Dependency Parser.')
-    parser.set_defaults(Parser=LBPSemanticDependencyParser)
+    parser = argparse.ArgumentParser(description='Create Semantic Dependency Parser using Variational Inference.')
+    parser.set_defaults(Parser=VISemanticDependencyParser)
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
@@ -23,6 +23,7 @@ def main():
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
+    subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

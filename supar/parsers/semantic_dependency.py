@@ -4,7 +4,8 @@ import os
 
 import torch
 import torch.nn as nn
-from supar.models import BiaffineSemanticDependencyModel, LBPSemanticDependencyModel
+from supar.models import (BiaffineSemanticDependencyModel,
+                          VISemanticDependencyModel)
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
@@ -263,9 +264,9 @@ class BiaffineSemanticDependencyParser(Parser):
         return cls(args, model, transform, optimizer, scheduler)
 
 
-class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
+class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
     r"""
-    The implementation of LBP Semantic Dependency Parser.
+    The implementation of Semantic Dependency Parser using Variational Inference.
 
     References:
         - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
@@ -275,8 +276,8 @@ class LBPSemanticDependencyParser(BiaffineSemanticDependencyParser):
         https://www.aclweb.org/anthology/P19-1454/
     """
 
-    NAME = 'lbp-semantic-dependency'
-    MODEL = LBPSemanticDependencyModel
+    NAME = 'vi-semantic-dependency'
+    MODEL = VISemanticDependencyModel
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
