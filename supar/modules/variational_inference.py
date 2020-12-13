@@ -87,8 +87,7 @@ class LBP(nn.Module):
         m_grd = p_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
-            # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
-            b = p_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
+            b = b.log_softmax(0)
             # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + p(ij->ik)) - m(ik->)
             m = b.unsqueeze(3) - m_sib
             m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_sib)).logsumexp(0)))
@@ -99,7 +98,8 @@ class LBP(nn.Module):
             m = b.unsqueeze(3) - m_grd
             m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_grd)).logsumexp(0)))
             m_grd = m_grd.transpose(2, 3).log_softmax(0)
-        b = p_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
+            # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
+            b = p_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
 
         return b.permute(3, 2, 1, 0).log_softmax(-1)
 
@@ -166,11 +166,11 @@ class MFVI(nn.Module):
         # [seq_len, seq_len, batch_size], (h->m)
         s_edge = s_edge.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        s_sib = s_sib.permute(2, 1, 3, 0)
+        s_sib = s_sib.permute(2, 1, 3, 0) * mask2o
         # [seq_len, seq_len, seq_len, batch_size], (h->m->c)
-        s_cop = s_cop.permute(2, 1, 3, 0)
+        s_cop = s_cop.permute(2, 1, 3, 0) * mask2o
         # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        s_grd = s_grd.permute(2, 1, 3, 0)
+        s_grd = s_grd.permute(2, 1, 3, 0) * mask2o
 
         # posterior distributions
         # [2, seq_len, seq_len, batch_size], (h->m)

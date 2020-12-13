@@ -441,7 +441,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         self.cop_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_binary, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
-        self.vi = MFVI(max_iter) if inference == 'mfvi' else LBP(max_iter)
+        self.vi = (MFVI if inference == 'mfvi' else LBP)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
