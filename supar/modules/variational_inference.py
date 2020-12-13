@@ -179,7 +179,7 @@ class MFVI(nn.Module):
         for _ in range(self.max_iter):
             q = q.softmax(0)
             # f(ij) = sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
-            f = (q[1].unsqueeze(2) * (s_sib + s_cop + s_grd) * mask2o).sum(2)
+            f = (q[1].unsqueeze(1) * s_sib + q[1].transpose(0, 1).unsqueeze(0) * s_cop + q[1].unsqueeze(0) * s_grd).sum(2)
             # q(ij) = s(ij) + f(ij)
             q = torch.stack((torch.zeros_like(q[0]), s_edge + f))
 
