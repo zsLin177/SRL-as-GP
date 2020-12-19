@@ -2,7 +2,8 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import LSTM, MLP, BertEmbedding, Biaffine, CharLSTM
+from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM
+from supar.modules.affine import Biaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRFConstituency
 from supar.utils import Config

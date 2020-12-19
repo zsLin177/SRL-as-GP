@@ -9,7 +9,9 @@ from .mlp import MLP
 from .scalar_mix import ScalarMix
 from .treecrf import (CRF2oDependency, CRFConstituency, CRFDependency,
                       MatrixTree)
-from .variational_inference import LBP, MFVI
+from .variational_inference import (LBPDependency, LBPSemanticDependency,
+                                    MFVIDependency, MFVISemanticDependency)
 
-__all__ = ['LBP', 'LSTM', 'MFVI', 'MLP', 'BertEmbedding', 'Biaffine', 'CharLSTM', 'CRF2oDependency',
-           'CRFConstituency', 'CRFDependency', 'IndependentDropout', 'MatrixTree', 'ScalarMix', 'SharedDropout', 'Triaffine']
+__all__ = ['LSTM', 'MLP', 'BertEmbedding', 'Biaffine', 'CharLSTM', 'CRF2oDependency', 'CRFConstituency', 'CRFDependency',
+           'IndependentDropout', 'LBPDependency', 'LBPSemanticDependency', 'MatrixTree', 'MFVIDependency',
+           'MFVISemanticDependency', 'ScalarMix', 'SharedDropout', 'Triaffine']
