@@ -750,7 +750,7 @@ class VIDependencyModel(nn.Module):
 
     References:
         - Xinyu Wang and Kewei Tu. 2020.
-          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_..
+          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_.
 
     Args:
         n_words (int):

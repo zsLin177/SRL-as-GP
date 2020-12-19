@@ -94,7 +94,7 @@ class MFVIDependency(nn.Module):
 
     References:
         - Xinyu Wang and Kewei Tu. 2020.
-          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_..
+          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_.
 
     .. _Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training:
         https://www.aclweb.org/anthology/2020.aacl-main.12/
@@ -173,7 +173,7 @@ class LBPSemanticDependency(nn.Module):
 
     References:
         - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_..
+          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
 
     .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
         https://www.aclweb.org/anthology/P19-1454/
@@ -273,7 +273,7 @@ class MFVISemanticDependency(nn.Module):
 
     References:
         - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_..
+          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
 
     .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
         https://www.aclweb.org/anthology/P19-1454/
