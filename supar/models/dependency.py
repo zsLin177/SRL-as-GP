@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM
+from supar.modules import MLP, BertEmbedding, CharLSTM, VariationalLSTM
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRF2oDependency, CRFDependency, MatrixTree
@@ -125,11 +125,11 @@ class BiaffineDependencyModel(nn.Module):
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
         # the lstm layer
-        self.lstm = LSTM(input_size=n_embed+n_feat_embed,
-                         hidden_size=n_lstm_hidden,
-                         num_layers=n_lstm_layers,
-                         bidirectional=True,
-                         dropout=lstm_dropout)
+        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+                                    hidden_size=n_lstm_hidden,
+                                    num_layers=n_lstm_layers,
+                                    bidirectional=True,
+                                    dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
         # the MLP layers
@@ -583,11 +583,11 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
         # the lstm layer
-        self.lstm = LSTM(input_size=n_embed+n_feat_embed,
-                         hidden_size=n_lstm_hidden,
-                         num_layers=n_lstm_layers,
-                         bidirectional=True,
-                         dropout=lstm_dropout)
+        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+                                    hidden_size=n_lstm_hidden,
+                                    num_layers=n_lstm_layers,
+                                    bidirectional=True,
+                                    dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
         # the MLP layers
@@ -861,11 +861,11 @@ class VIDependencyModel(nn.Module):
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
         # the lstm layer
-        self.lstm = LSTM(input_size=n_embed+n_feat_embed,
-                         hidden_size=n_lstm_hidden,
-                         num_layers=n_lstm_layers,
-                         bidirectional=True,
-                         dropout=lstm_dropout)
+        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+                                    hidden_size=n_lstm_hidden,
+                                    num_layers=n_lstm_layers,
+                                    bidirectional=True,
+                                    dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
         # the MLP layers

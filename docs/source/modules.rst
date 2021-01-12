@@ -21,10 +21,10 @@ BertEmbedding
 .. autoclass:: ScalarMix
     :members:
 
-LSTM
+VariationalLSTM
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: LSTM
+.. autoclass:: VariationalLSTM
     :members:
 
 CharLSTM

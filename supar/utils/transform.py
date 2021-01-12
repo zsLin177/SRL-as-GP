@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 from collections.abc import Iterable
-from itertools import chain
 
 import nltk
 from supar.utils.logging import get_logger, progress_bar

@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM
+from supar.modules import MLP, BertEmbedding, CharLSTM, VariationalLSTM
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.variational_inference import (LBPSemanticDependency,
@@ -149,11 +149,11 @@ class BiaffineSemanticDependencyModel(nn.Module):
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
         # the lstm layer
-        self.lstm = LSTM(input_size=self.n_input,
-                         hidden_size=n_lstm_hidden,
-                         num_layers=n_lstm_layers,
-                         bidirectional=True,
-                         dropout=lstm_dropout)
+        self.lstm = VariationalLSTM(input_size=self.n_input,
+                                    hidden_size=n_lstm_hidden,
+                                    num_layers=n_lstm_layers,
+                                    bidirectional=True,
+                                    dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
         # the MLP layers
@@ -426,11 +426,11 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
         # the lstm layer
-        self.lstm = LSTM(input_size=self.n_input,
-                         hidden_size=n_lstm_hidden,
-                         num_layers=n_lstm_layers,
-                         bidirectional=True,
-                         dropout=lstm_dropout)
+        self.lstm = VariationalLSTM(input_size=self.n_input,
+                                    hidden_size=n_lstm_hidden,
+                                    num_layers=n_lstm_layers,
+                                    bidirectional=True,
+                                    dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
         # the MLP layers
