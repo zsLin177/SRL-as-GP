@@ -37,7 +37,7 @@ class LBPDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logQ = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.lbp(*(s.requires_grad_() for s in scores), mask)
         marginals = logQ.exp()
 
         if target is None:
@@ -46,11 +46,12 @@ class LBPDependency(nn.Module):
 
         return loss, marginals
 
-    def belief_propagation(self, s_edge, s_sib, s_grd, mask):
-        batch_size, seq_len, _ = mask.shape
-        hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+    def lbp(self, s_edge, s_sib, s_grd, mask):
+        batch_size, seq_len = mask.shape
+        hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        mask = mask.index_fill(1, hs.new_tensor(0), 1)
         # [seq_len, seq_len, batch_size], (h->m)
-        mask = mask.permute(2, 1, 0)
+        mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
@@ -128,7 +129,7 @@ class MFVIDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logQ = self.mean_field_variational_inference(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.mfvi(*(s.requires_grad_() for s in scores), mask)
         marginals = logQ.exp()
 
         if target is None:
@@ -137,11 +138,12 @@ class MFVIDependency(nn.Module):
 
         return loss, marginals
 
-    def mean_field_variational_inference(self, s_edge, s_sib, s_grd, mask):
+    def mfvi(self, s_edge, s_sib, s_grd, mask):
         batch_size, seq_len = mask.shape
         hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        mask = mask.index_fill(1, hs.new_tensor(0), 1)
         # [seq_len, seq_len, batch_size], (h->m)
-        mask = (mask.unsqueeze(-1) & mask.index_fill(1, hs.new_tensor(0), 1).unsqueeze(-2)).permute(2, 1, 0)
+        mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
@@ -208,7 +210,7 @@ class LBPSemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logQ = self.belief_propagation(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.lbp(*(s.requires_grad_() for s in scores), mask)
         marginals = logQ.exp()
 
         if target is None:
@@ -217,7 +219,7 @@ class LBPSemanticDependency(nn.Module):
 
         return loss, marginals
 
-    def belief_propagation(self, s_edge, s_sib, s_cop, s_grd, mask):
+    def lbp(self, s_edge, s_sib, s_cop, s_grd, mask):
         batch_size, seq_len, _ = mask.shape
         hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
         # [seq_len, seq_len, batch_size], (h->m)
@@ -308,7 +310,7 @@ class MFVISemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logQ = self.mean_field_variational_inference(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.mfvi(*(s.requires_grad_() for s in scores), mask)
         marginals = logQ.exp()
 
         if target is None:
@@ -317,7 +319,7 @@ class MFVISemanticDependency(nn.Module):
 
         return loss, marginals
 
-    def mean_field_variational_inference(self, s_edge, s_sib, s_cop, s_grd, mask):
+    def mfvi(self, s_edge, s_sib, s_cop, s_grd, mask):
         batch_size, seq_len, _ = mask.shape
         hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
         # [seq_len, seq_len, batch_size], (h->m)
