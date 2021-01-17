@@ -9,16 +9,9 @@ from supar.utils.fn import stripe
 class MatrixTree(nn.Module):
     r"""
     MatrixTree for calculating partitions and marginals of directed spanning trees (a.k.a. non-projective trees)
-    in :math:`O(n^3)` by an adaptation of Kirchhoff's MatrixTree Theorem.
+    in :math:`O(n^3)` by an adaptation of Kirchhoff's MatrixTree Theorem (:cite:`koo-etal-2007-structured`).
 
     It differs from the original paper in that marginals are computed via back-propagation rather than matrix inversion.
-
-    References:
-        - Terry Koo, Amir Globerson, Xavier Carreras and Michael Collins. 2007.
-          `Structured Prediction Models via the Matrix-Tree Theorem`_.
-
-    .. _Structured Prediction Models via the Matrix-Tree Theorem:
-        https://www.aclweb.org/anthology/D07-1015/
     """
 
     @torch.enable_grad()
@@ -88,14 +81,8 @@ class MatrixTree(nn.Module):
 
 class CRFDependency(nn.Module):
     r"""
-    First-order TreeCRF for calculating partitions and marginals of projective dependency trees in :math:`O(n^3)`.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
+    First-order TreeCRF for calculating partitions and marginals of projective dependency trees
+    in :math:`O(n^3)` (:cite:`zhang-etal-2020-efficient`).
     """
 
     @torch.enable_grad()
@@ -197,14 +184,8 @@ class CRFDependency(nn.Module):
 
 class CRF2oDependency(nn.Module):
     r"""
-    Second-order TreeCRF for calculating partitions and marginals of projective dependency trees in :math:`O(n^3)`.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
+    Second-order TreeCRF for calculating partitions and marginals of projective dependency trees
+    in :math:`O(n^3)` (:cite:`zhang-etal-2020-efficient`).
     """
 
     @torch.enable_grad()
@@ -338,14 +319,7 @@ class CRF2oDependency(nn.Module):
 
 class CRFConstituency(nn.Module):
     r"""
-    TreeCRF for calculating partitions and marginals of constituency trees in :math:`O(n^3)`.
-
-    References:
-        - Yu Zhang, houquan Zhou and Zhenghua Li. 2020.
-          `Fast and Accurate Neural CRF Constituency Parsing`_.
-
-    .. _Fast and Accurate Neural CRF Constituency Parsing:
-        https://www.ijcai.org/Proceedings/2020/560/
+    TreeCRF for calculating partitions and marginals of constituency trees in :math:`O(n^3)` (:cite:`zhang-etal-2020-fast`).
     """
 
     @torch.enable_grad()

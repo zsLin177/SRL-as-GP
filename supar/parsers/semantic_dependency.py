@@ -21,14 +21,7 @@ logger = get_logger(__name__)
 
 class BiaffineSemanticDependencyParser(Parser):
     r"""
-    The implementation of Biaffine Semantic Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 20178.
-          `Simpler but More Accurate Semantic Dependency Parsing`_.
-
-    .. _Simpler but More Accurate Semantic Dependency Parsing:
-        https://www.aclweb.org/anthology/P18-2077/
+    The implementation of Biaffine Semantic Dependency Parser (:cite:`dozat-etal-2018-simpler`).
     """
 
     NAME = 'biaffine-semantic-dependency'
@@ -267,14 +260,7 @@ class BiaffineSemanticDependencyParser(Parser):
 
 class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
     r"""
-    The implementation of Semantic Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
-
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
+    The implementation of Semantic Dependency Parser using Variational Inference (:cite:`wang-etal-2019-second`).
     """
 
     NAME = 'vi-semantic-dependency'

@@ -74,17 +74,13 @@ class CharLSTM(nn.Module):
 
 class VariationalLSTM(nn.Module):
     r"""
-    VariationalLSTM is an variant of the vanilla bidirectional LSTM adopted by Biaffine Parser
-    with the only difference of the dropout strategy.
+    VariationalLSTM (:cite:`yarin-etal-2016-dropout`) is an variant of the vanilla bidirectional LSTM
+    adopted by Biaffine Parser with the only difference of the dropout strategy.
     It drops nodes in the LSTM layers (input and recurrent connections)
     and applies the same dropout mask at every recurrent timesteps.
 
     APIs are roughly the same as :class:`~torch.nn.LSTM` except that we only allows
     :class:`~torch.nn.utils.rnn.PackedSequence` as input.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2017.
-          `Deep Biaffine Attention for Neural Dependency Parsing`_.
 
     Args:
         input_size (int):
@@ -98,9 +94,6 @@ class VariationalLSTM(nn.Module):
         dropout (float):
             If non-zero, introduces a :class:`SharedDropout` layer on the outputs of each LSTM layer except the last layer.
             Default: 0.
-
-    .. _Deep Biaffine Attention for Neural Dependency Parsing:
-        https://openreview.net/forum?id=Hk95PK9le
     """
 
     def __init__(self, input_size, hidden_size, num_layers=1, bidirectional=False, dropout=0):

@@ -6,15 +6,11 @@ import torch.nn as nn
 
 class Biaffine(nn.Module):
     r"""
-    Biaffine layer for first-order scoring.
+    Biaffine layer for first-order scoring (:cite:`dozat-etal-2017-biaffine`).
 
     This function has a tensor of weights :math:`W` and bias terms if needed.
     The score :math:`s(x, y)` of the vector pair :math:`(x, y)` is computed as :math:`x^T W y`,
     in which :math:`x` and :math:`y` can be concatenated with bias terms.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2017.
-          `Deep Biaffine Attention for Neural Dependency Parsing`_.
 
     Args:
         n_in (int):
@@ -25,9 +21,6 @@ class Biaffine(nn.Module):
             If ``True``, adds a bias term for tensor :math:`x`. Default: ``True``.
         bias_y (bool):
             If ``True``, adds a bias term for tensor :math:`y`. Default: ``True``.
-
-    .. _Deep Biaffine Attention for Neural Dependency Parsing:
-        https://openreview.net/forum?id=Hk95PK9le
     """
 
     def __init__(self, n_in, n_out=1, bias_x=True, bias_y=True):
@@ -81,17 +74,11 @@ class Biaffine(nn.Module):
 
 class Triaffine(nn.Module):
     r"""
-    Triaffine layer for second-order scoring.
+    Triaffine layer for second-order scoring (:cite:`zhang-etal-2020-efficient`, :cite:`wang-etal-2019-second`).
 
     This function has a tensor of weights :math:`W` and bias terms if needed.
     The score :math:`s(x, y, z)` of the vector triple :math:`(x, y, z)` is computed as :math:`x^T z^T W y`.
     Usually, :math:`x` and :math:`y` can be concatenated with bias terms.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
-        - Xinyu Wang, Jingxian Huang, and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
 
     Args:
         n_in (int):
@@ -102,11 +89,6 @@ class Triaffine(nn.Module):
             If ``True``, adds a bias term for tensor :math:`x`. Default: ``False``.
         bias_y (bool):
             If ``True``, adds a bias term for tensor :math:`y`. Default: ``False``.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
     """
 
     def __init__(self, n_in, n_out=1, bias_x=False, bias_y=False):

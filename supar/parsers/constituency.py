@@ -20,14 +20,7 @@ logger = get_logger(__name__)
 
 class CRFConstituencyParser(Parser):
     r"""
-    The implementation of CRF Constituency Parser.
-
-    References:
-        - Yu Zhang, houquan Zhou and Zhenghua Li. 2020.
-          `Fast and Accurate Neural CRF Constituency Parsing`_.
-
-    .. _Fast and Accurate Neural CRF Constituency Parsing:
-        https://www.ijcai.org/Proceedings/2020/560/
+    The implementation of CRF Constituency Parser (:cite:`zhang-etal-2020-fast`).
     """
 
     NAME = 'crf-constituency'

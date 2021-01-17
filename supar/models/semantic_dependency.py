@@ -13,11 +13,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 class BiaffineSemanticDependencyModel(nn.Module):
     r"""
-    The implementation of Biaffine Semantic Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2018.
-          `Simpler but More Accurate Semantic Dependency Parsing`_.
+    The implementation of Biaffine Semantic Dependency Parser (:cite:`dozat-etal-2018-simpler`).
 
     Args:
         n_words (int):
@@ -82,8 +78,6 @@ class BiaffineSemanticDependencyModel(nn.Module):
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
 
-    .. _Simpler but More Accurate Semantic Dependency Parsing:
-        https://www.aclweb.org/anthology/P18-2077/
     .. _transformers:
         https://github.com/huggingface/transformers
     """
@@ -279,11 +273,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
 
 class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
     r"""
-    The implementation of Semantic Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
+    The implementation of Semantic Dependency Parser using Variational Inference (:cite:`wang-etal-2019-second`).
 
     Args:
         n_words (int):
@@ -356,8 +346,6 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
 
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
     .. _transformers:
         https://github.com/huggingface/transformers
     """

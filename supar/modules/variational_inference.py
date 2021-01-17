@@ -89,14 +89,8 @@ class LBPDependency(nn.Module):
 
 class MFVIDependency(nn.Module):
     r"""
-    Mean Field Variational Inference for approximately calculating marginals of dependency trees.
-
-    References:
-        - Xinyu Wang and Kewei Tu. 2020.
-          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_.
-
-    .. _Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training:
-        https://www.aclweb.org/anthology/2020.aacl-main.12/
+    Mean Field Variational Inference for approximately calculating marginals
+    of dependency trees (:cite:`wang-etal-2020-second`).
     """
 
     def __init__(self, max_iter=3):
@@ -169,14 +163,8 @@ class MFVIDependency(nn.Module):
 
 class LBPSemanticDependency(nn.Module):
     r"""
-    Loopy Belief Propagation for approximately calculating marginals of semantic dependency trees.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
-
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
+    Loopy Belief Propagation for approximately calculating marginals
+    of semantic dependency trees (:cite:`wang-etal-2019-second`).
     """
 
     def __init__(self, max_iter=3):
@@ -269,14 +257,8 @@ class LBPSemanticDependency(nn.Module):
 
 class MFVISemanticDependency(nn.Module):
     r"""
-    Mean Field Variational Inference for approximately calculating marginals of semantic dependency trees.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
-
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
+    Mean Field Variational Inference for approximately calculating marginals
+    of semantic dependency trees (:cite:`wang-etal-2019-second`).
     """
 
     def __init__(self, max_iter=3):

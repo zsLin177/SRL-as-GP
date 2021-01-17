@@ -135,7 +135,7 @@ def tarjan(sequence):
 
 def chuliu_edmonds(s):
     r"""
-    ChuLiu/Edmonds algorithm for non-projective decoding.
+    ChuLiu/Edmonds algorithm for non-projective decoding (:cite:`mcdonald-etal-2005-non`).
 
     Some code is borrowed from `tdozat's implementation`_.
     Descriptions of notations and formulas can be found in
@@ -143,10 +143,6 @@ def chuliu_edmonds(s):
 
     Notes:
         The algorithm does not guarantee to parse a single-root tree.
-
-    References:
-        - Ryan McDonald, Fernando Pereira, Kiril Ribarov and Jan Hajic. 2005.
-          `Non-projective Dependency Parsing using Spanning Tree Algorithms`_.
 
     Args:
         s (~torch.Tensor): ``[seq_len, seq_len]``.
@@ -158,8 +154,6 @@ def chuliu_edmonds(s):
 
     .. _tdozat's implementation:
         https://github.com/tdozat/Parser-v3
-    .. _Non-projective Dependency Parsing using Spanning Tree Algorithms:
-        https://www.aclweb.org/anthology/H05-1066/
     """
 
     s[0, 1:] = float('-inf')
@@ -293,11 +287,7 @@ def mst(scores, mask, multiroot=False):
 
 def eisner(scores, mask):
     r"""
-    First-order Eisner algorithm for projective decoding.
-
-    References:
-        - Ryan McDonald, Koby Crammer and Fernando Pereira. 2005.
-          `Online Large-Margin Training of Dependency Parsers`_.
+    First-order Eisner algorithm for projective decoding (:cite:`mcdonald-etal-2005-online`).
 
     Args:
         scores (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -318,9 +308,6 @@ def eisner(scores, mask):
         >>> mask = torch.tensor([[False,  True,  True,  True]])
         >>> eisner(scores, mask)
         tensor([[0, 2, 0, 2]])
-
-    .. _Online Large-Margin Training of Dependency Parsers:
-        https://www.aclweb.org/anthology/P05-1012/
     """
 
     lens = mask.sum(1)
@@ -386,12 +373,8 @@ def eisner(scores, mask):
 
 def eisner2o(scores, mask):
     r"""
-    Second-order Eisner algorithm for projective decoding.
+    Second-order Eisner algorithm for projective decoding (:cite:`mcdonald-pereira-2006-online`).
     This is an extension of the first-order one that further incorporates sibling scores into tree scoring.
-
-    References:
-        - Ryan McDonald and Fernando Pereira. 2006.
-          `Online Learning of Approximate Dependency Parsing Algorithms`_.
 
     Args:
         scores (~torch.Tensor, ~torch.Tensor):
@@ -430,9 +413,6 @@ def eisner2o(scores, mask):
         >>> mask = torch.tensor([[False,  True,  True,  True]])
         >>> eisner2o((s_arc, s_sib), mask)
         tensor([[0, 2, 0, 2]])
-
-    .. _Online Learning of Approximate Dependency Parsing Algorithms:
-        https://www.aclweb.org/anthology/E06-1011/
     """
 
     # the end position of each sentence in a batch
@@ -541,11 +521,7 @@ def eisner2o(scores, mask):
 
 def cky(scores, mask):
     r"""
-    The implementation of `Cocke-Kasami-Younger`_ (CKY) algorithm to parse constituency trees.
-
-    References:
-        - Yu Zhang, Houquan Zhou and Zhenghua Li. 2020.
-          `Fast and Accurate Neural CRF Constituency Parsing`_.
+    The implementation of `Cocke-Kasami-Younger`_ (CKY) algorithm to parse constituency trees (:cite:`zhang-etal-2020-fast`).
 
     Args:
         scores (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -571,8 +547,6 @@ def cky(scores, mask):
 
     .. _Cocke-Kasami-Younger:
         https://en.wikipedia.org/wiki/CYK_algorithm
-    .. _Fast and Accurate Neural CRF Constituency Parsing:
-        https://www.ijcai.org/Proceedings/2020/560/
     """
 
     lens = mask[:, 0].sum(-1)

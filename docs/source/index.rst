@@ -16,6 +16,7 @@ The :mod:`SuPar` package provides a collection of state-of-the-art syntactic par
    models
    modules
    utils
+   refs
 
 Indices and tables
 ==================

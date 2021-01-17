@@ -19,7 +19,7 @@ import supar
 # -- Project information -----------------------------------------------------
 
 project = 'SuPar'
-copyright = '2020, Yu Zhang'
+copyright = '2018-2021, Yu Zhang'
 author = 'Yu Zhang'
 
 # The short X.Y version
@@ -39,7 +39,9 @@ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.mathjax',
               'sphinx.ext.napoleon',
               'sphinx.ext.todo',
-              'sphinx.ext.viewcode']
+              'sphinx.ext.viewcode',
+              'sphinxcontrib.bibtex',
+              'sphinx_astrorefs']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -73,7 +75,16 @@ pygments_style = 'sphinx'
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'sphinx_book_theme'
+html_theme_options = {
+    "theme_dev_mode": True,
+    "path_to_docs": "docs",
+    "repository_url": "https://github.com/yzhangcs/parser",
+    "use_edit_page_button": True,
+    "use_issues_button": True,
+    "use_repository_button": True,
+    "use_download_button": True
+}
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,

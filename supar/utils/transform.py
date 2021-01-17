@@ -129,7 +129,7 @@ class Sentence(object):
 
 class CoNLL(Transform):
     r"""
-    The CoNLL object holds ten fields required for CoNLL-X data format.
+    The CoNLL object holds ten fields required for CoNLL-X data format (:cite:`buchholz-marsi-2006-conll`).
     Each field can be binded with one or more :class:`Field` objects. For example,
     ``FORM`` can contain both :class:`Field` and :class:`SubwordField` to produce tensors for words and subwords.
 
@@ -155,13 +155,6 @@ class CoNLL(Transform):
             Projective heads of tokens, which are either values of ID or zeros, or underscores if not available.
         PDEPREL:
             Dependency relations to the PHEAD, or underscores if not available.
-
-    References:
-        - Sabine Buchholz and Erwin Marsi. 2006.
-          `CoNLL-X Shared Task on Multilingual Dependency Parsing`_.
-
-    .. _CoNLL-X Shared Task on Multilingual Dependency Parsing:
-        https://www.aclweb.org/anthology/W06-2920/
     """
 
     fields = ['ID', 'FORM', 'LEMMA', 'CPOS', 'POS', 'FEATS', 'HEAD', 'DEPREL', 'PHEAD', 'PDEPREL']

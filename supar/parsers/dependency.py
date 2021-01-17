@@ -23,14 +23,7 @@ logger = get_logger(__name__)
 
 class BiaffineDependencyParser(Parser):
     r"""
-    The implementation of Biaffine Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2017.
-          `Deep Biaffine Attention for Neural Dependency Parsing`_.
-
-    .. _Deep Biaffine Attention for Neural Dependency Parsing:
-        https://openreview.net/forum?id=Hk95PK9le
+    The implementation of Biaffine Dependency Parser (:cite:`dozat-etal-2017-biaffine`).
     """
 
     NAME = 'biaffine-dependency'
@@ -295,18 +288,7 @@ class BiaffineDependencyParser(Parser):
 
 class CRFNPDependencyParser(BiaffineDependencyParser):
     r"""
-    The implementation of non-projective CRF Dependency Parser.
-
-    References:
-        - Xuezhe Ma and Eduard Hovy. 2017.
-          `Neural Probabilistic Model for Non-projective MST Parsing`_.
-        - Terry Koo, Amir Globerson, Xavier Carreras and Michael Collins. 2007.
-          `Structured Prediction Models via the Matrix-Tree Theorem`_.
-
-    .. _Neural Probabilistic Model for Non-projective MST Parsing:
-        https://www.aclweb.org/anthology/I17-1007/
-    .. _Structured Prediction Models via the Matrix-Tree Theorem:
-        https://www.aclweb.org/anthology/D07-1015/
+    The implementation of non-projective CRF Dependency Parser (:cite:`ma-hovy-2017-neural`, :cite:`koo-etal-2007-structured`).
     """
 
     NAME = 'crfnp-dependency'
@@ -482,14 +464,7 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
 
 class CRFDependencyParser(BiaffineDependencyParser):
     r"""
-    The implementation of first-order CRF Dependency Parser.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
+    The implementation of first-order CRF Dependency Parser (:cite:`zhang-etal-2020-efficient`).
     """
 
     NAME = 'crf-dependency'
@@ -671,14 +646,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
 class CRF2oDependencyParser(BiaffineDependencyParser):
     r"""
-    The implementation of second-order CRF Dependency Parser.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
+    The implementation of second-order CRF Dependency Parser (:cite:`zhang-etal-2020-efficient`).
     """
 
     NAME = 'crf2o-dependency'
@@ -943,14 +911,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
 class VIDependencyParser(BiaffineDependencyParser):
     r"""
-    The implementation of Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang and Kewei Tu. 2020.
-          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_.
-
-    .. _Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training:
-        https://www.aclweb.org/anthology/2020.aacl-main.12/
+    The implementation of Dependency Parser using Variational Inference (:cite:`wang-etal-2020-second`).
     """
 
     NAME = 'vi-dependency'

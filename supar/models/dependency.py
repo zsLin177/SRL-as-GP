@@ -15,11 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 class BiaffineDependencyModel(nn.Module):
     r"""
-    The implementation of Biaffine Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2017.
-          `Deep Biaffine Attention for Neural Dependency Parsing`_.
+    The implementation of Biaffine Dependency Parser (:cite:`dozat-etal-2017-biaffine`).
 
     Args:
         n_words (int):
@@ -71,8 +67,6 @@ class BiaffineDependencyModel(nn.Module):
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
 
-    .. _Deep Biaffine Attention for Neural Dependency Parsing:
-        https://openreview.net/forum?id=Hk95PK9le
     .. _transformers:
         https://github.com/huggingface/transformers
     """
@@ -270,13 +264,7 @@ class BiaffineDependencyModel(nn.Module):
 
 class CRFNPDependencyModel(BiaffineDependencyModel):
     r"""
-    The implementation of non-projective CRF Dependency Parser.
-
-    References:
-        - Xuezhe Ma and Eduard Hovy. 2017.
-          `Neural Probabilistic Model for Non-projective MST Parsing`_.
-        - Terry Koo, Amir Globerson, Xavier Carreras and Michael Collins. 2007.
-          `Structured Prediction Models via the Matrix-Tree Theorem`_.
+    The implementation of non-projective CRF Dependency Parser (:cite:`ma-hovy-2017-neural`, :cite:`koo-etal-2007-structured`).
 
     Args:
         n_words (int):
@@ -327,11 +315,6 @@ class CRFNPDependencyModel(BiaffineDependencyModel):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
-
-    .. _Neural Probabilistic Model for Non-projective MST Parsing:
-        https://www.aclweb.org/anthology/I17-1007/
-    .. _Structured Prediction Models via the Matrix-Tree Theorem:
-        https://www.aclweb.org/anthology/D07-1015/
     """
 
     def __init__(self, **kwargs):
@@ -371,11 +354,7 @@ class CRFNPDependencyModel(BiaffineDependencyModel):
 
 class CRFDependencyModel(BiaffineDependencyModel):
     r"""
-    The implementation of first-order CRF Dependency Parser.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang, 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
+    The implementation of first-order CRF Dependency Parser (:cite:`zhang-etal-2020-efficient`).
 
     Args:
         n_words (int):
@@ -426,9 +405,6 @@ class CRFDependencyModel(BiaffineDependencyModel):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
     """
 
     def __init__(self, **kwargs):
@@ -473,11 +449,7 @@ class CRFDependencyModel(BiaffineDependencyModel):
 
 class CRF2oDependencyModel(BiaffineDependencyModel):
     r"""
-    The implementation of second-order CRF Dependency Parser.
-
-    References:
-        - Yu Zhang, Zhenghua Li and Min Zhang. 2020.
-          `Efficient Second-Order TreeCRF for Neural Dependency Parsing`_.
+    The implementation of second-order CRF Dependency Parser (:cite:`zhang-etal-2020-efficient`).
 
     Args:
         n_words (int):
@@ -530,9 +502,6 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
-
-    .. _Efficient Second-Order TreeCRF for Neural Dependency Parsing:
-        https://www.aclweb.org/anthology/2020.acl-main.302/
     """
 
     def __init__(self,
@@ -746,11 +715,7 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
 
 class VIDependencyModel(nn.Module):
     r"""
-    The implementation of Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang and Kewei Tu. 2020.
-          `Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training`_.
+    The implementation of Dependency Parser using Variational Inference (:cite:`wang-etal-2020-second`).
 
     Args:
         n_words (int):
@@ -804,8 +769,6 @@ class VIDependencyModel(nn.Module):
         unk_index (int):
             The index of the unknown token in the word vocabulary. Default: 1.
 
-    .. _Second-Order Neural Dependency Parsing with Message Passing and End-to-End Training:
-        https://www.aclweb.org/anthology/2020.aacl-main.12/
     .. _transformers:
         https://github.com/huggingface/transformers
     """
