@@ -158,6 +158,7 @@ class BiaffineDependencyParser(Parser):
                 mask &= words.unsqueeze(-1).ne(self.puncts).all(-1)
             metric(arc_preds, rel_preds, arcs, rels, mask)
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -428,6 +429,7 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
                 mask &= words.unsqueeze(-1).ne(self.puncts).all(-1)
             metric(arc_preds, rel_preds, arcs, rels, mask)
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -612,6 +614,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
                 mask &= words.unsqueeze(-1).ne(self.puncts).all(-1)
             metric(arc_preds, rel_preds, arcs, rels, mask)
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -800,6 +803,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                 mask &= words.unsqueeze(-1).ne(self.puncts).all(-1)
             metric(arc_preds, rel_preds, arcs, rels, mask)
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -1065,6 +1069,7 @@ class VIDependencyParser(BiaffineDependencyParser):
                 mask &= words.unsqueeze(-1).ne(self.puncts).all(-1)
             metric(arc_preds, rel_preds, arcs, rels, mask)
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):

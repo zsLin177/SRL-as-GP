@@ -57,34 +57,32 @@ class LBPDependency(nn.Module):
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
         mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
         # log potentials of unary and binary factors
-        # [2, seq_len, seq_len, batch_size], (h->m)
-        p_edge = torch.stack((torch.zeros_like(s_edge), s_edge)).permute(0, 3, 2, 1)
+        # [seq_len, seq_len, batch_size], (h->m)
+        s_edge = s_edge.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        p_sib = s_sib.permute(2, 1, 3, 0)
+        s_sib = s_sib.permute(2, 1, 3, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        p_grd = s_grd.permute(2, 1, 3, 0)
+        s_grd = s_grd.permute(2, 1, 3, 0)
 
         # log beliefs
-        # [2, seq_len, seq_len, batch_size], (h->m)
-        b = p_edge.new_zeros(2, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, batch_size], (h->m)
+        b = s_edge.new_zeros(seq_len, seq_len, batch_size)
         # log messages of siblings
-        # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        m_sib = p_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
+        m_sib = s_sib.new_zeros(seq_len, seq_len, seq_len, batch_size)
         # log messages of grand-parents
-        # [2, seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        m_grd = p_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
+        m_grd = s_grd.new_zeros(seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
             b = b.log_softmax(0)
-            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + p(ij->ik)) - m(ik->)
-            m = b.unsqueeze(3) - m_sib
-            m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_sib)).logsumexp(0)))
-            m_sib = m_sib.transpose(2, 3).log_softmax(0)
-            m = b.unsqueeze(3) - m_grd
-            m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_grd)).logsumexp(0)))
-            m_grd = m_grd.transpose(2, 3).log_softmax(0)
-            # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
-            b = p_edge + ((m_sib + m_grd) * mask2o).sum(3)
+            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + s(ij->ik))
+            m = b.unsqueeze(2) - m_sib
+            m_sib = (m + s_sib.unsqueeze(-1)).logsumexp(-1).log_softmax(0)
+            m = b.unsqueeze(2) - m_grd
+            m_grd = (m + s_sib.unsqueeze(-1)).logsumexp(-1).log_softmax(0)
+            # b(ij) = s(ij) + sum(m(ik->ij)), k != i,j
+            b = s_edge + ((m_sib + m_grd) * mask2o).sum(3)
 
         return b.permute(3, 2, 1, 0).log_softmax(-1)
 
@@ -109,7 +107,7 @@ class MFVIDependency(nn.Module):
     def __repr__(self):
         return f"{self.__class__.__name__}(max_iter={self.max_iter})"
 
-    @ torch.enable_grad()
+    @torch.enable_grad()
     def forward(self, scores, mask, target=None):
         r"""
         Args:
@@ -157,7 +155,7 @@ class MFVIDependency(nn.Module):
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (h->m)
-        q = s_edge.new_zeros(seq_len, seq_len, batch_size)
+        q = s_edge.new_zeros(seq_len, seq_len, batch_size).masked_fill_(~mask[0].unsqueeze(1), float('-inf'))
 
         for _ in range(self.max_iter):
             q = q.softmax(0)
@@ -230,41 +228,41 @@ class LBPSemanticDependency(nn.Module):
         mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
         # log potentials of unary and binary factors
         # [2, seq_len, seq_len, batch_size], (h->m)
-        p_edge = torch.stack((torch.zeros_like(s_edge), s_edge)).permute(0, 3, 2, 1)
+        s_edge = torch.stack((torch.zeros_like(s_edge), s_edge)).permute(0, 3, 2, 1)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        p_sib = s_sib.permute(2, 1, 3, 0)
+        s_sib = s_sib.permute(2, 1, 3, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->c)
-        p_cop = s_cop.permute(2, 1, 3, 0)
+        s_cop = s_cop.permute(2, 1, 3, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        p_grd = s_grd.permute(2, 1, 3, 0)
+        s_grd = s_grd.permute(2, 1, 3, 0)
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        b = p_edge.new_zeros(2, seq_len, seq_len, batch_size)
+        b = s_edge.new_zeros(2, seq_len, seq_len, batch_size)
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        m_sib = p_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
         # log messages of co-parents
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->c)
-        m_cop = p_cop.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        m_cop = s_cop.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
         # log messages of grand-parents
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        m_grd = p_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        m_grd = s_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
             b = b.log_softmax(0)
-            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + p(ij->ik)) - m(ik->)
+            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + s(ij->ik))
             m = b.unsqueeze(3) - m_sib
-            m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_sib)).logsumexp(0)))
+            m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_sib)).logsumexp(0)))
             m_sib = m_sib.transpose(2, 3).log_softmax(0)
             m = b.unsqueeze(3) - m_cop
-            m_cop = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_cop)).logsumexp(0)))
+            m_cop = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_cop)).logsumexp(0)))
             m_cop = m_cop.transpose(2, 3).log_softmax(0)
             m = b.unsqueeze(3) - m_grd
-            m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + p_grd)).logsumexp(0)))
+            m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_grd)).logsumexp(0)))
             m_grd = m_grd.transpose(2, 3).log_softmax(0)
-            # b(ij) = p(ij) + sum(m(ik->ij)), min(i, j) < k < max(i, j)
-            b = p_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
+            # b(ij) = s(ij) + sum(m(ik->ij)), k != i,j
+            b = s_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
 
         return b.permute(3, 2, 1, 0).log_softmax(-1)
 
@@ -289,7 +287,7 @@ class MFVISemanticDependency(nn.Module):
     def __repr__(self):
         return f"{self.__class__.__name__}(max_iter={self.max_iter})"
 
-    @ torch.enable_grad()
+    @torch.enable_grad()
     def forward(self, scores, mask, target=None):
         r"""
         Args:

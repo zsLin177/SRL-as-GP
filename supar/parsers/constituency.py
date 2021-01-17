@@ -150,6 +150,7 @@ class CRFConstituencyParser(Parser):
             self.scheduler.step()
 
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):

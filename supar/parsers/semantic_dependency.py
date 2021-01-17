@@ -125,6 +125,7 @@ class BiaffineSemanticDependencyParser(Parser):
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -370,6 +371,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+        logger.info(f"{bar.postfix}")
 
     @torch.no_grad()
     def _evaluate(self, loader):
