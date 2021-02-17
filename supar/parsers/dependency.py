@@ -207,7 +207,8 @@ class BiaffineDependencyParser(Parser):
               optimizer_args={'lr': 2e-3, 'betas': (.9, .9), 'eps': 1e-12},
               scheduler_args={'gamma': .75**(1/5000)},
               min_freq=2,
-              fix_len=20, **kwargs):
+              fix_len=20,
+              **kwargs):
         r"""
         Build a brand-new Parser, including initialization of all data fields and model parameters.
 
@@ -832,7 +833,8 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
               optimizer_args={'lr': 2e-3, 'betas': (.9, .9), 'eps': 1e-12},
               scheduler_args={'gamma': .75**(1/5000)},
               min_freq=2,
-              fix_len=20, **kwargs):
+              fix_len=20,
+              **kwargs):
         r"""
         Build a brand-new Parser, including initialization of all data fields and model parameters.
 

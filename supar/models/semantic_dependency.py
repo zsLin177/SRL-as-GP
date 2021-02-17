@@ -341,7 +341,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         inference (str):
             Approximate inference methods. Default: 'mfvi'.
         max_iter (int):
-            Max iteration times for Loopy Belief Propagation. Default: 3.
+            Max iteration times for Variational Inference. Default: 3.
         interpolation (int):
             Constant to even out the label/edge loss. Default: .1.
         pad_index (int):

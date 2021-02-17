@@ -6,7 +6,7 @@ from supar.modules import MLP, CharLSTM, TransformerEmbedding, VariationalLSTM
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRF2oDependency, CRFDependency, MatrixTree
-from supar.modules.variational_inference import MFVIDependency
+from supar.modules.variational_inference import MFVIDependency, LBPDependency
 from supar.utils import Config
 from supar.utils.alg import eisner, eisner2o, mst
 from supar.utils.transform import CoNLL
@@ -806,6 +806,12 @@ class VIDependencyModel(nn.Module):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
+        inference (str):
+            Approximate inference methods. Default: 'mfvi'.
+        max_iter (int):
+            Max iteration times for Variational Inference. Default: 3.
+        interpolation (int):
+            Constant to even out the label/edge loss. Default: .1.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -837,7 +843,9 @@ class VIDependencyModel(nn.Module):
                  n_mlp_bin=100,
                  n_mlp_rel=100,
                  mlp_dropout=.33,
+                 inference='mfvi',
                  max_iter=3,
+                 interpolation=0.1,
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
@@ -885,11 +893,11 @@ class VIDependencyModel(nn.Module):
 
         self.arc_attn = Biaffine(n_in=n_mlp_arc, bias_x=True, bias_y=False)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
-        self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
-        self.vi = MFVIDependency(max_iter)
+        self.vi = (MFVIDependency if inference == 'mfvi' else LBPDependency)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
+        self.interpolation = interpolation
         self.pad_index = pad_index
         self.unk_index = unk_index
 
@@ -963,8 +971,6 @@ class VIDependencyModel(nn.Module):
         s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_rels]
         s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
-        # set the scores that exceed the length of each sentence to -inf
-        s_arc.masked_fill_(~mask.unsqueeze(1), float('-inf'))
 
         return s_arc, s_sib, s_grd, s_rel
 
@@ -983,7 +989,7 @@ class VIDependencyModel(nn.Module):
                 The tensor of gold-standard arcs.
             rels (~torch.LongTensor): ``[batch_size, seq_len]``.
                 The tensor of gold-standard labels.
-            mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
+            mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask for covering the unpadded tokens.
 
         Returns:
@@ -991,11 +997,12 @@ class VIDependencyModel(nn.Module):
                 The training loss.
         """
 
-        arc_loss, marginals = self.vi((s_arc, s_sib, s_grd), mask, arcs)
+        arc_mask = mask.index_fill(1, arcs.new_tensor(0), 1).unsqueeze(1) & mask.unsqueeze(2)
+        arc_loss, marginals = self.vi((s_arc, s_sib, s_grd), arc_mask, arcs)
         s_rel, rels = s_rel[mask], rels[mask]
         s_rel = s_rel[torch.arange(len(rels)), arcs[mask]]
         rel_loss = self.criterion(s_rel, rels)
-        loss = arc_loss + rel_loss
+        loss = self.interpolation * rel_loss + (1 - self.interpolation) * arc_loss
         return loss, marginals
 
     def decode(self, s_arc, s_rel, mask, tree=False, proj=False):
@@ -1018,6 +1025,7 @@ class VIDependencyModel(nn.Module):
         """
 
         lens = mask.sum(1)
+        s_arc = s_arc.masked_fill(~mask.index_fill(1, lens.new_tensor(0), 1).unsqueeze(1), float('-inf'))
         arc_preds = s_arc.argmax(-1)
         bad = [not CoNLL.istree(seq[1:i+1], proj) for i, seq in zip(lens.tolist(), arc_preds.tolist())]
         if tree and any(bad):
