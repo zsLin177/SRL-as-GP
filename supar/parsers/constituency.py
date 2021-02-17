@@ -128,7 +128,7 @@ class CRFConstituencyParser(Parser):
 
         bar = progress_bar(loader)
 
-        for words, feats, trees, charts in bar:
+        for words, *feats, trees, charts in bar:
             self.optimizer.zero_grad()
 
             batch_size, seq_len = words.shape
@@ -151,7 +151,7 @@ class CRFConstituencyParser(Parser):
 
         total_loss, metric = 0, SpanMetric()
 
-        for words, feats, trees, charts in loader:
+        for words, *feats, trees, charts in loader:
             batch_size, seq_len = words.shape
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
@@ -176,7 +176,7 @@ class CRFConstituencyParser(Parser):
 
         preds, probs = {'trees': []}, []
 
-        for words, feats, trees in progress_bar(loader):
+        for words, *feats, trees in progress_bar(loader):
             batch_size, seq_len = words.shape
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
@@ -232,41 +232,44 @@ class CRFConstituencyParser(Parser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, eos=eos, lower=True)
-        if args.feat == 'char':
-            FEAT = SubwordField('chars', pad=pad, unk=unk, bos=bos, eos=eos, fix_len=args.fix_len)
-        elif args.feat == 'bert':
+        TAG, CHAR, BERT = None, None, None
+        if 'tag' in args.feat:
+            TAG = Field('tags', bos=bos, eos=eos)
+        if 'char' in args.feat:
+            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, eos=eos, fix_len=args.fix_len)
+        if 'bert' in args.feat:
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            FEAT = SubwordField('bert',
+            BERT = SubwordField('bert',
                                 pad=tokenizer.pad_token,
                                 unk=tokenizer.unk_token,
                                 bos=tokenizer.cls_token or tokenizer.cls_token,
                                 eos=tokenizer.sep_token or tokenizer.sep_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize)
-            FEAT.vocab = tokenizer.get_vocab()
-        else:
-            FEAT = Field('tags', bos=bos, eos=eos)
+            BERT.vocab = tokenizer.get_vocab()
         TREE = RawField('trees')
         CHART = ChartField('charts')
-        if args.feat in ('char', 'bert'):
-            transform = Tree(WORD=(WORD, FEAT), TREE=TREE, CHART=CHART)
-        else:
-            transform = Tree(WORD=WORD, POS=FEAT, TREE=TREE, CHART=CHART)
+        transform = Tree(WORD=(WORD, CHAR, BERT), POS=TAG, TREE=TREE, CHART=CHART)
 
         train = Dataset(transform, args.train)
         WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
-        FEAT.build(train)
+        if TAG is not None:
+            TAG.build(train)
+        if CHAR is not None:
+            CHAR.build(train)
         CHART.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
-            'n_feats': len(FEAT.vocab),
             'n_labels': len(CHART.vocab),
+            'n_tags': len(TAG.vocab) if TAG is not None else None,
+            'n_chars': len(CHAR.vocab) if CHAR is not None else None,
+            'char_pad_index': CHAR.pad_index if CHAR is not None else None,
+            'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
             'bos_index': WORD.bos_index,
-            'eos_index': WORD.eos_index,
-            'feat_pad_index': FEAT.pad_index
+            'eos_index': WORD.eos_index
         })
         logger.info(f"{transform}")
 

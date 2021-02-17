@@ -67,9 +67,7 @@ class Dataset(torch.utils.data.Dataset):
     def __setattr__(self, name, value):
         if 'sentences' in self.__dict__ and name in self.sentences[0]:
             # restore the order of sequences in the buckets
-            indices = torch.tensor([i
-                                    for bucket in self.buckets.values()
-                                    for i in bucket]).argsort()
+            indices = torch.tensor([i for bucket in self.buckets.values() for i in bucket]).argsort()
             for index, sentence in zip(indices, self.sentences):
                 setattr(sentence, name, value[index])
         else:

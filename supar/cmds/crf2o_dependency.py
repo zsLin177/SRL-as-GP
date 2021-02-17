@@ -16,7 +16,7 @@ def main():
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
-    subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'bert'], help='choices of additional features')
+    subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'bert'], nargs='+', help='features to use')
     subparser.add_argument('--build', '-b', action='store_true', help='whether to build the model first')
     subparser.add_argument('--punct', action='store_true', help='whether to include punctuation')
     subparser.add_argument('--max-len', type=int, help='max length of the sentences')

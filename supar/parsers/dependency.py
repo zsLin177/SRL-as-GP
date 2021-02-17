@@ -32,11 +32,10 @@ class BiaffineDependencyParser(Parser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        if self.args.feat in ('char', 'bert'):
-            self.WORD, self.FEAT = self.transform.FORM
-        else:
-            self.WORD, self.FEAT = self.transform.FORM, self.transform.CPOS
+        self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        self.TAG = self.transform.CPOS
         self.ARC, self.REL = self.transform.HEAD, self.transform.DEPREL
+
         self.puncts = torch.tensor([i
                                     for s, i in self.WORD.vocab.stoi.items()
                                     if ispunct(s)]).to(self.args.device)
@@ -130,7 +129,7 @@ class BiaffineDependencyParser(Parser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for words, feats, arcs, rels in bar:
+        for words, *feats, arcs, rels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -159,7 +158,7 @@ class BiaffineDependencyParser(Parser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for words, feats, arcs, rels in loader:
+        for words, *feats, arcs, rels in loader:
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -183,7 +182,7 @@ class BiaffineDependencyParser(Parser):
 
         preds = {}
         arcs, rels, probs = [], [], []
-        for words, feats in progress_bar(loader):
+        for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -240,39 +239,42 @@ class BiaffineDependencyParser(Parser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        if args.feat == 'char':
-            FEAT = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
-        elif args.feat == 'bert':
+        TAG, CHAR, BERT = None, None, None
+        if 'tag' in args.feat:
+            TAG = Field('tags', bos=bos)
+        if 'char' in args.feat:
+            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
+        if 'bert' in args.feat:
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            FEAT = SubwordField('bert',
+            BERT = SubwordField('bert',
                                 pad=tokenizer.pad_token,
                                 unk=tokenizer.unk_token,
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize)
-            FEAT.vocab = tokenizer.get_vocab()
-        else:
-            FEAT = Field('tags', bos=bos)
+            BERT.vocab = tokenizer.get_vocab()
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         REL = Field('rels', bos=bos)
-        if args.feat in ('char', 'bert'):
-            transform = CoNLL(FORM=(WORD, FEAT), HEAD=ARC, DEPREL=REL)
-        else:
-            transform = CoNLL(FORM=WORD, CPOS=FEAT, HEAD=ARC, DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, CHAR, BERT), CPOS=TAG, HEAD=ARC, DEPREL=REL)
 
         train = Dataset(transform, args.train)
         WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
-        FEAT.build(train)
+        if TAG is not None:
+            TAG.build(train)
+        if CHAR is not None:
+            CHAR.build(train)
         REL.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
-            'n_feats': len(FEAT.vocab),
+            'n_tags': len(TAG.vocab) if TAG is not None else None,
+            'n_chars': len(CHAR.vocab) if CHAR is not None else None,
+            'char_pad_index': CHAR.pad_index if CHAR is not None else None,
+            'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'n_rels': len(REL.vocab),
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
-            'bos_index': WORD.bos_index,
-            'feat_pad_index': FEAT.pad_index,
+            'bos_index': WORD.bos_index
         })
         logger.info(f"{transform}")
 
@@ -392,7 +394,7 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for words, feats, arcs, rels in bar:
+        for words, *feats, arcs, rels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -419,7 +421,7 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for words, feats, arcs, rels in loader:
+        for words, *feats, arcs, rels in loader:
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -441,7 +443,7 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
 
         preds = {}
         arcs, rels, probs = [], [], []
-        for words, feats in progress_bar(loader):
+        for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -568,7 +570,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for words, feats, arcs, rels in bar:
+        for words, *feats, arcs, rels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -597,7 +599,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for words, feats, arcs, rels in loader:
+        for words, *feats, arcs, rels in loader:
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -621,7 +623,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         preds = {}
         arcs, rels, probs = [], [], []
-        for words, feats in progress_bar(loader):
+        for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -750,7 +752,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for words, feats, arcs, sibs, rels in bar:
+        for words, *feats, arcs, sibs, rels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -779,7 +781,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for words, feats, arcs, sibs, rels in loader:
+        for words, *feats, arcs, sibs, rels in loader:
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -803,7 +805,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         preds = {}
         arcs, rels, probs = [], [], []
-        for words, feats in progress_bar(loader):
+        for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -862,40 +864,43 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        if args.feat == 'char':
-            FEAT = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
-        elif args.feat == 'bert':
+        TAG, CHAR, BERT = None, None, None
+        if 'tag' in args.feat:
+            TAG = Field('tags', bos=bos)
+        if 'char' in args.feat:
+            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
+        if 'bert' in args.feat:
             from transformers import AutoTokenizer
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            FEAT = SubwordField('bert',
+            BERT = SubwordField('bert',
                                 pad=tokenizer.pad_token,
                                 unk=tokenizer.unk_token,
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize)
-            FEAT.vocab = tokenizer.get_vocab()
-        else:
-            FEAT = Field('tags', bos=bos)
+            BERT.vocab = tokenizer.get_vocab()
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         SIB = ChartField('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)
         REL = Field('rels', bos=bos)
-        if args.feat in ('char', 'bert'):
-            transform = CoNLL(FORM=(WORD, FEAT), HEAD=(ARC, SIB), DEPREL=REL)
-        else:
-            transform = CoNLL(FORM=WORD, CPOS=FEAT, HEAD=(ARC, SIB), DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, CHAR, BERT), CPOS=TAG, HEAD=(ARC, SIB), DEPREL=REL)
 
         train = Dataset(transform, args.train)
         WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
-        FEAT.build(train)
+        if TAG is not None:
+            TAG.build(train)
+        if CHAR is not None:
+            CHAR.build(train)
         REL.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
-            'n_feats': len(FEAT.vocab),
+            'n_tags': len(TAG.vocab) if TAG is not None else None,
+            'n_chars': len(CHAR.vocab) if CHAR is not None else None,
+            'char_pad_index': CHAR.pad_index if CHAR is not None else None,
+            'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'n_rels': len(REL.vocab),
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
-            'bos_index': WORD.bos_index,
-            'feat_pad_index': FEAT.pad_index
+            'bos_index': WORD.bos_index
         })
         logger.info(f"{transform}")
 
@@ -1009,14 +1014,14 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for words, feats, arcs, rels in bar:
+        for words, *feats, arcs, rels in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_grd, s_rel = self.model(words, feats)
-            loss, s_arc = self.model.loss(s_arc, s_sib, s_grd, s_rel, arcs, rels, mask, self.args.partial)
+            loss, s_arc = self.model.loss(s_arc, s_sib, s_grd, s_rel, arcs, rels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
@@ -1038,12 +1043,12 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for words, feats, arcs, rels in loader:
+        for words, *feats, arcs, rels in loader:
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_grd, s_rel = self.model(words, feats)
-            loss, s_arc = self.model.loss(s_arc, s_sib, s_grd, s_rel, arcs, rels, mask, self.args.partial)
+            loss, s_arc = self.model.loss(s_arc, s_sib, s_grd, s_rel, arcs, rels, mask)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             if self.args.partial:
                 mask &= arcs.ge(0)
@@ -1062,7 +1067,7 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         preds = {}
         arcs, rels, probs = [], [], []
-        for words, feats in progress_bar(loader):
+        for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -1081,85 +1086,3 @@ class VIDependencyParser(BiaffineDependencyParser):
             preds['probs'] = probs
 
         return preds
-
-    @classmethod
-    def build(cls, path,
-              optimizer_args={'lr': 2e-3, 'betas': (.9, .9), 'eps': 1e-12},
-              scheduler_args={'gamma': .75**(1/5000)},
-              min_freq=2,
-              fix_len=20, **kwargs):
-        r"""
-        Build a brand-new Parser, including initialization of all data fields and model parameters.
-
-        Args:
-            path (str):
-                The path of the model to be saved.
-            optimizer_args (dict):
-                Arguments for creating an optimizer.
-            scheduler_args (dict):
-                Arguments for creating a scheduler.
-            min_freq (str):
-                The minimum frequency needed to include a token in the vocabulary. Default: 2.
-            fix_len (int):
-                The max length of all subword pieces. The excess part of each piece will be truncated.
-                Required if using CharLSTM/BERT.
-                Default: 20.
-            kwargs (dict):
-                A dict holding the unconsumed arguments.
-        """
-
-        args = Config(**locals())
-        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if os.path.exists(path) and not args.build:
-            parser = cls.load(**args)
-            parser.model = cls.MODEL(**parser.args)
-            parser.model.load_pretrained(parser.WORD.embed).to(args.device)
-            return parser
-
-        logger.info("Building the fields")
-        WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        if args.feat == 'char':
-            FEAT = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
-        elif args.feat == 'bert':
-            from transformers import AutoTokenizer
-            tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            FEAT = SubwordField('bert',
-                                pad=tokenizer.pad_token,
-                                unk=tokenizer.unk_token,
-                                bos=tokenizer.bos_token or tokenizer.cls_token,
-                                fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize)
-            FEAT.vocab = tokenizer.get_vocab()
-        else:
-            FEAT = Field('tags', bos=bos)
-        ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
-        REL = Field('rels', bos=bos)
-        if args.feat in ('char', 'bert'):
-            transform = CoNLL(FORM=(WORD, FEAT), HEAD=ARC, DEPREL=REL)
-        else:
-            transform = CoNLL(FORM=WORD, CPOS=FEAT, HEAD=ARC, DEPREL=REL)
-
-        train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
-        FEAT.build(train)
-        REL.build(train)
-        args.update({
-            'n_words': WORD.vocab.n_init,
-            'n_feats': len(FEAT.vocab),
-            'n_rels': len(REL.vocab),
-            'pad_index': WORD.pad_index,
-            'unk_index': WORD.unk_index,
-            'bos_index': WORD.bos_index,
-            'feat_pad_index': FEAT.pad_index
-        })
-        logger.info(f"{transform}")
-
-        logger.info("Building the model")
-        model = cls.MODEL(**args).load_pretrained(WORD.embed).to(args.device)
-        logger.info(f"{model}\n")
-
-        optimizer = Adam(model.parameters(), **optimizer_args)
-        scheduler = ExponentialLR(optimizer, **scheduler_args)
-
-        return cls(args, model, transform, optimizer, scheduler)

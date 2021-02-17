@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import MLP, BertEmbedding, CharLSTM, VariationalLSTM
+from supar.modules import MLP, TransformerEmbedding, CharLSTM, VariationalLSTM
 from supar.modules.affine import Biaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRFConstituency
@@ -19,25 +19,29 @@ class CRFConstituencyModel(nn.Module):
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
-        n_labels (int):
-            The number of labels.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_rels (int):
+            The number of labels in the treebank.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: 'char'.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
-            This is required if ``feat='bert'``. The full list can be found in `transformers`.
+            This is required if ``feat='bert'``. The full list can be found in `transformers`_.
             Default: ``None``.
         n_bert_layers (int):
             Specifies how many last layers to use. Required if ``feat='bert'``.
@@ -45,6 +49,8 @@ class CRFConstituencyModel(nn.Module):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -53,14 +59,12 @@ class CRFConstituencyModel(nn.Module):
             The number of LSTM layers. Default: 3.
         lstm_dropout (float):
             The dropout ratio of LSTM. Default: .33.
-        n_mlp_span (int):
-            Span MLP size. Default: 500.
-        n_mlp_label  (int):
+        n_mlp_arc (int):
+            Arc MLP size. Default: 500.
+        n_mlp_rel  (int):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -72,15 +76,18 @@ class CRFConstituencyModel(nn.Module):
 
     def __init__(self,
                  n_words,
-                 n_feats,
                  n_labels,
-                 feat='char',
+                 n_tags=None,
+                 n_chars=None,
+                 feat=['char'],
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pad_index=0,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
@@ -88,50 +95,48 @@ class CRFConstituencyModel(nn.Module):
                  n_mlp_span=500,
                  n_mlp_label=100,
                  mlp_dropout=.33,
-                 feat_pad_index=0,
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
         super().__init__()
 
         self.args = Config().update(locals())
-        # the embedding layer
+
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
-        if feat == 'char':
-            self.feat_embed = CharLSTM(n_chars=n_feats,
+
+        self.n_input = n_embed
+        if 'tag' in feat:
+            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
+                                          embedding_dim=n_feat_embed)
+            self.n_input += n_feat_embed
+        if 'char' in feat:
+            self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
                                        n_out=n_feat_embed,
-                                       pad_index=feat_pad_index)
-        elif feat == 'bert':
-            self.feat_embed = BertEmbedding(model=bert,
-                                            n_layers=n_bert_layers,
-                                            n_out=n_feat_embed,
-                                            pad_index=feat_pad_index,
-                                            dropout=mix_dropout)
-            self.n_feat_embed = self.feat_embed.n_out
-        elif feat == 'tag':
-            self.feat_embed = nn.Embedding(num_embeddings=n_feats,
-                                           embedding_dim=n_feat_embed)
-        else:
-            raise RuntimeError("The feat type should be in ['char', 'bert', 'tag'].")
+                                       pad_index=char_pad_index)
+            self.n_input += n_feat_embed
+        if 'bert' in feat:
+            self.bert_embed = TransformerEmbedding(model=bert,
+                                                   n_layers=n_bert_layers,
+                                                   n_out=n_feat_embed,
+                                                   pad_index=bert_pad_index,
+                                                   dropout=mix_dropout)
+            self.n_input += self.bert_embed.n_out
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
-        # the lstm layer
-        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+        self.lstm = VariationalLSTM(self.n_input,
                                     hidden_size=n_lstm_hidden,
                                     num_layers=n_lstm_layers,
                                     bidirectional=True,
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        # the MLP layers
         self.mlp_span_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
         self.mlp_span_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
         self.mlp_label_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
         self.mlp_label_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
 
-        # the Biaffine layers
         self.span_attn = Biaffine(n_in=n_mlp_span, bias_x=True, bias_y=False)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.crf = CRFConstituency()
@@ -143,7 +148,6 @@ class CRFConstituencyModel(nn.Module):
         if embed is not None:
             self.pretrained = nn.Embedding.from_pretrained(embed)
             nn.init.zeros_(self.word_embed.weight)
-
         return self
 
     def forward(self, words, feats):
@@ -151,10 +155,10 @@ class CRFConstituencyModel(nn.Module):
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
                 Word indices.
-            feats (~torch.LongTensor):
-                Feat indices.
-                If feat is ``'char'`` or ``'bert'``, the size of feats should be ``[batch_size, seq_len, fix_len]``
-                if ``'tag'``, the size is ``[batch_size, seq_len]``.
+            feats (list[~torch.LongTensor]):
+                A list of feat indices.
+                The size of indices is ``[batch_size, seq_len, fix_len]`` if feat is ``'char'`` or ``'bert'``,
+                or ``[batch_size, seq_len]`` otherwise.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
@@ -176,8 +180,15 @@ class CRFConstituencyModel(nn.Module):
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
             word_embed += self.pretrained(words)
-        feat_embed = self.feat_embed(feats)
-        word_embed, feat_embed = self.embed_dropout(word_embed, feat_embed)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
         # concatenate the word and feat representations
         embed = torch.cat((word_embed, feat_embed), -1)
 
@@ -243,6 +254,6 @@ class CRFConstituencyModel(nn.Module):
                 Sequences of factorized labeled trees traversed in pre-order.
         """
 
-        span_preds = cky(s_span, mask)
+        span_preds = cky(s_span.unsqueeze(-1), mask)
         label_preds = s_label.argmax(-1).tolist()
-        return [[(i, j, labels[i][j]) for i, j in spans] for spans, labels in zip(span_preds, label_preds)]
+        return [[(i, j, labels[i][j]) for i, j, _ in spans] for spans, labels in zip(span_preds, label_preds)]

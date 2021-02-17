@@ -31,10 +31,9 @@ class CharLSTM(nn.Module):
         self.n_out = n_out
         self.pad_index = pad_index
 
-        # the embedding layer
         self.embed = nn.Embedding(num_embeddings=n_chars,
                                   embedding_dim=n_embed)
-        # the lstm layer
+
         self.lstm = nn.LSTM(input_size=n_embed,
                             hidden_size=n_out//2,
                             batch_first=True,

@@ -7,7 +7,7 @@ from supar import Parser
 
 def test_parse():
     sentence = ['The', 'dog', 'chases', 'the', 'cat', '.']
-    for name in supar.PRETRAINED:
+    for name in supar.MODEL:
         parser = Parser.load(name)
         parser.predict([sentence], prob=True)
 

@@ -6,7 +6,7 @@ from supar.modules.scalar_mix import ScalarMix
 from torch.nn.utils.rnn import pad_sequence
 
 
-class BertEmbedding(nn.Module):
+class TransformerEmbedding(nn.Module):
     r"""
     A module that directly utilizes the pretrained models in `transformers`_ to produce BERT representations.
     While mainly tailored to provide input preparation and post-processing for the BERT model,

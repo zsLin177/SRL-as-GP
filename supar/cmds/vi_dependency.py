@@ -15,7 +15,7 @@ def main():
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
-    subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'bert'], help='choices of additional features')
+    subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'bert'], nargs='+', help='features to use')
     subparser.add_argument('--build', '-b', action='store_true', help='whether to build the model first')
     subparser.add_argument('--punct', action='store_true', help='whether to include punctuation')
     subparser.add_argument('--max-len', type=int, help='max length of the sentences')
@@ -27,7 +27,6 @@ def main():
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
-    subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--punct', action='store_true', help='whether to include punctuation')

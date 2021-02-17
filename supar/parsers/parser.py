@@ -59,8 +59,7 @@ class Parser(object):
             logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
 
             t = datetime.now() - start
-            # save the model if it is the best so far
-            if dev_metric > best_metric:
+            if dev_metric > best_metric and epoch >= args.patience:
                 best_e, best_metric = epoch, dev_metric
                 if is_master():
                     self.save(args.path)
@@ -145,7 +144,7 @@ class Parser(object):
 
         Args:
             path (str):
-                - a string with the shortcut name of a pretrained parser defined in ``supar.PRETRAINED``
+                - a string with the shortcut name of a pretrained parser defined in ``supar.MODEL``
                   to load from cache or download, e.g., ``'crf-dep-en'``.
                 - a path to a directory containing a pre-trained parser, e.g., `./<path>/model`.
             kwargs (dict):
@@ -163,7 +162,7 @@ class Parser(object):
         if os.path.exists(path):
             state = torch.load(path)
         else:
-            state = torch.hub.load_state_dict_from_url(supar.PRETRAINED[path] if path in supar.PRETRAINED else path)
+            state = torch.hub.load_state_dict_from_url(supar.MODEL[path] if path in supar.MODEL else path)
         cls = supar.PARSER[state['name']] if cls.NAME is None else cls
         args = state['args'].update(args)
         model = cls.MODEL(**args)

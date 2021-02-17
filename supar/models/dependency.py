@@ -2,11 +2,11 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import MLP, BertEmbedding, CharLSTM, VariationalLSTM
+from supar.modules import MLP, CharLSTM, TransformerEmbedding, VariationalLSTM
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRF2oDependency, CRFDependency, MatrixTree
-from supar.modules.variational_inference import LBPDependency, MFVIDependency
+from supar.modules.variational_inference import MFVIDependency
 from supar.utils import Config
 from supar.utils.alg import eisner, eisner2o, mst
 from supar.utils.transform import CoNLL
@@ -20,22 +20,26 @@ class BiaffineDependencyModel(nn.Module):
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
         n_rels (int):
             The number of labels in the treebank.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: ``'char'``.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
             This is required if ``feat='bert'``. The full list can be found in `transformers`_.
@@ -46,6 +50,8 @@ class BiaffineDependencyModel(nn.Module):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -60,8 +66,6 @@ class BiaffineDependencyModel(nn.Module):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -73,15 +77,18 @@ class BiaffineDependencyModel(nn.Module):
 
     def __init__(self,
                  n_words,
-                 n_feats,
                  n_rels,
-                 feat='char',
+                 n_tags=None,
+                 n_chars=None,
+                 feat=['char'],
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pad_index=0,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
@@ -89,50 +96,48 @@ class BiaffineDependencyModel(nn.Module):
                  n_mlp_arc=500,
                  n_mlp_rel=100,
                  mlp_dropout=.33,
-                 feat_pad_index=0,
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
         super().__init__()
 
         self.args = Config().update(locals())
-        # the embedding layer
+
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
-        if feat == 'char':
-            self.feat_embed = CharLSTM(n_chars=n_feats,
+
+        self.n_input = n_embed
+        if 'tag' in feat:
+            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
+                                          embedding_dim=n_feat_embed)
+            self.n_input += n_feat_embed
+        if 'char' in feat:
+            self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
                                        n_out=n_feat_embed,
-                                       pad_index=feat_pad_index)
-        elif feat == 'bert':
-            self.feat_embed = BertEmbedding(model=bert,
-                                            n_layers=n_bert_layers,
-                                            n_out=n_feat_embed,
-                                            pad_index=feat_pad_index,
-                                            dropout=mix_dropout)
-            self.n_feat_embed = self.feat_embed.n_out
-        elif feat == 'tag':
-            self.feat_embed = nn.Embedding(num_embeddings=n_feats,
-                                           embedding_dim=n_feat_embed)
-        else:
-            raise RuntimeError("The feat type should be in ['char', 'bert', 'tag'].")
+                                       pad_index=char_pad_index)
+            self.n_input += n_feat_embed
+        if 'bert' in feat:
+            self.bert_embed = TransformerEmbedding(model=bert,
+                                                   n_layers=n_bert_layers,
+                                                   n_out=n_feat_embed,
+                                                   pad_index=bert_pad_index,
+                                                   dropout=mix_dropout)
+            self.n_input += self.bert_embed.n_out
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
-        # the lstm layer
-        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+        self.lstm = VariationalLSTM(self.n_input,
                                     hidden_size=n_lstm_hidden,
                                     num_layers=n_lstm_layers,
                                     bidirectional=True,
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        # the MLP layers
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
-        # the Biaffine layers
         self.arc_attn = Biaffine(n_in=n_mlp_arc, bias_x=True, bias_y=False)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
         self.criterion = nn.CrossEntropyLoss()
@@ -150,10 +155,10 @@ class BiaffineDependencyModel(nn.Module):
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
                 Word indices.
-            feats (~torch.LongTensor):
-                Feat indices.
-                If feat is ``'char'`` or ``'bert'``, the size of feats should be ``[batch_size, seq_len, fix_len]``.
-                if ``'tag'``, the size is ``[batch_size, seq_len]``.
+            feats (list[~torch.LongTensor]):
+                A list of feat indices.
+                The size of indices is ``[batch_size, seq_len, fix_len]`` if feat is ``'char'`` or ``'bert'``,
+                or ``[batch_size, seq_len]`` otherwise.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
@@ -175,8 +180,15 @@ class BiaffineDependencyModel(nn.Module):
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
             word_embed += self.pretrained(words)
-        feat_embed = self.feat_embed(feats)
-        word_embed, feat_embed = self.embed_dropout(word_embed, feat_embed)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
         # concatenate the word and feat representations
         embed = torch.cat((word_embed, feat_embed), -1)
 
@@ -269,22 +281,26 @@ class CRFNPDependencyModel(BiaffineDependencyModel):
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
         n_rels (int):
             The number of labels in the treebank.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: ``'char'``.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
             This is required if ``feat='bert'``. The full list can be found in `transformers`_.
@@ -295,6 +311,8 @@ class CRFNPDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -309,8 +327,6 @@ class CRFNPDependencyModel(BiaffineDependencyModel):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -359,22 +375,26 @@ class CRFDependencyModel(BiaffineDependencyModel):
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
         n_rels (int):
             The number of labels in the treebank.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: ``'char'``.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
             This is required if ``feat='bert'``. The full list can be found in `transformers`_.
@@ -385,6 +405,8 @@ class CRFDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -399,8 +421,6 @@ class CRFDependencyModel(BiaffineDependencyModel):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -447,29 +467,33 @@ class CRFDependencyModel(BiaffineDependencyModel):
         return loss, arc_probs
 
 
-class CRF2oDependencyModel(BiaffineDependencyModel):
+class CRF2oDependencyModel(nn.Module):
     r"""
     The implementation of second-order CRF Dependency Parser (:cite:`zhang-etal-2020-efficient`).
 
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
         n_rels (int):
             The number of labels in the treebank.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: ``'char'``.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
             This is required if ``feat='bert'``. The full list can be found in `transformers`_.
@@ -480,6 +504,8 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -496,8 +522,6 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -506,15 +530,18 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
 
     def __init__(self,
                  n_words,
-                 n_feats,
                  n_rels,
-                 feat='char',
+                 n_tags=None,
+                 n_chars=None,
+                 feat=['char'],
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pad_index=0,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
@@ -523,43 +550,43 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
                  n_mlp_sib=100,
                  n_mlp_rel=100,
                  mlp_dropout=.33,
-                 feat_pad_index=0,
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
-        super().__init__(**Config().update(locals()))
+        super().__init__()
 
-        # the embedding layer
+        self.args = Config().update(locals())
+
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
-        if feat == 'char':
-            self.feat_embed = CharLSTM(n_chars=n_feats,
+
+        self.n_input = n_embed
+        if 'tag' in feat:
+            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
+                                          embedding_dim=n_feat_embed)
+            self.n_input += n_feat_embed
+        if 'char' in feat:
+            self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
                                        n_out=n_feat_embed,
-                                       pad_index=feat_pad_index)
-        elif feat == 'bert':
-            self.feat_embed = BertEmbedding(model=bert,
-                                            n_layers=n_bert_layers,
-                                            n_out=n_feat_embed,
-                                            pad_index=feat_pad_index,
-                                            dropout=mix_dropout)
-            self.n_feat_embed = self.feat_embed.n_out
-        elif feat == 'tag':
-            self.feat_embed = nn.Embedding(num_embeddings=n_feats,
-                                           embedding_dim=n_feat_embed)
-        else:
-            raise RuntimeError("The feat type should be in ['char', 'bert', 'tag'].")
+                                       pad_index=char_pad_index)
+            self.n_input += n_feat_embed
+        if 'bert' in feat:
+            self.bert_embed = TransformerEmbedding(model=bert,
+                                                   n_layers=n_bert_layers,
+                                                   n_out=n_feat_embed,
+                                                   pad_index=bert_pad_index,
+                                                   dropout=mix_dropout)
+            self.n_input += self.bert_embed.n_out
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
-        # the lstm layer
-        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+        self.lstm = VariationalLSTM(self.n_input,
                                     hidden_size=n_lstm_hidden,
                                     num_layers=n_lstm_layers,
                                     bidirectional=True,
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        # the MLP layers
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_sib_s = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_sib, dropout=mlp_dropout)
@@ -568,25 +595,29 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
-        # the Biaffine layers
         self.arc_attn = Biaffine(n_in=n_mlp_arc, bias_x=True, bias_y=False)
         self.sib_attn = Triaffine(n_in=n_mlp_sib, bias_x=True, bias_y=True)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
+        self.crf = CRF2oDependency()
         self.criterion = nn.CrossEntropyLoss()
         self.pad_index = pad_index
         self.unk_index = unk_index
 
-        self.crf = CRF2oDependency()
+    def load_pretrained(self, embed=None):
+        if embed is not None:
+            self.pretrained = nn.Embedding.from_pretrained(embed)
+            nn.init.zeros_(self.word_embed.weight)
+        return self
 
     def forward(self, words, feats):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
                 Word indices.
-            feats (~torch.LongTensor):
-                Feat indices.
-                If feat is ``'char'`` or ``'bert'``, the size of feats should be ``[batch_size, seq_len, fix_len]``
-                if ``'tag'``, the size is ``[batch_size, seq_len]``.
+            feats (list[~torch.LongTensor]):
+                A list of feat indices.
+                The size of indices is ``[batch_size, seq_len, fix_len]`` if feat is ``'char'`` or ``'bert'``,
+                or ``[batch_size, seq_len]`` otherwise.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor, ~torch.Tensor:
@@ -608,8 +639,15 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
             word_embed += self.pretrained(words)
-        feat_embed = self.feat_embed(feats)
-        word_embed, feat_embed = self.embed_dropout(word_embed, feat_embed)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
         # concatenate the word and feat representations
         embed = torch.cat((word_embed, feat_embed), -1)
 
@@ -720,22 +758,26 @@ class VIDependencyModel(nn.Module):
     Args:
         n_words (int):
             The size of the word vocabulary.
-        n_feats (int):
-            The size of the feat vocabulary.
         n_rels (int):
             The number of labels in the treebank.
-        feat (str):
-            Specifies which type of additional feature to use: ``'char'`` | ``'bert'`` | ``'tag'``.
+        n_tags (int):
+            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
+        n_chars (int):
+            The number of characters, needed if character-level representations are used. Default: ``None``.
+        feat (list[str]):
+            Additional features to use.
+            ``'tag'``: POS tag embeddings.
             ``'char'``: Character-level representations extracted by CharLSTM.
             ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            ``'tag'``: POS tag embeddings.
-            Default: ``'char'``.
+            Default: [``'char'``].
         n_embed (int):
             The size of word embeddings. Default: 100.
         n_feat_embed (int):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        char_pad_index (int):
+            The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
             Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
             This is required if ``feat='bert'``. The full list can be found in `transformers`_.
@@ -746,6 +788,8 @@ class VIDependencyModel(nn.Module):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pad_index (int):
+            The index of the padding token in the BERT vocabulary. Default: 0.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -762,8 +806,6 @@ class VIDependencyModel(nn.Module):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        feat_pad_index (int):
-            The index of the padding token in the feat vocabulary. Default: 0.
         pad_index (int):
             The index of the padding token in the word vocabulary. Default: 0.
         unk_index (int):
@@ -775,15 +817,18 @@ class VIDependencyModel(nn.Module):
 
     def __init__(self,
                  n_words,
-                 n_feats,
                  n_rels,
-                 feat='char',
+                 n_tags=None,
+                 n_chars=None,
+                 feat=['char'],
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pad_index=0,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
@@ -792,8 +837,6 @@ class VIDependencyModel(nn.Module):
                  n_mlp_bin=100,
                  n_mlp_rel=100,
                  mlp_dropout=.33,
-                 feat_pad_index=0,
-                 inference='mfvi',
                  max_iter=3,
                  pad_index=0,
                  unk_index=1,
@@ -801,37 +844,37 @@ class VIDependencyModel(nn.Module):
         super().__init__()
 
         self.args = Config().update(locals())
-        # the embedding layer
+
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
-        if feat == 'char':
-            self.feat_embed = CharLSTM(n_chars=n_feats,
+
+        self.n_input = n_embed
+        if 'tag' in feat:
+            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
+                                          embedding_dim=n_feat_embed)
+            self.n_input += n_feat_embed
+        if 'char' in feat:
+            self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
                                        n_out=n_feat_embed,
-                                       pad_index=feat_pad_index)
-        elif feat == 'bert':
-            self.feat_embed = BertEmbedding(model=bert,
-                                            n_layers=n_bert_layers,
-                                            n_out=n_feat_embed,
-                                            pad_index=feat_pad_index,
-                                            dropout=mix_dropout)
-            self.n_feat_embed = self.feat_embed.n_out
-        elif feat == 'tag':
-            self.feat_embed = nn.Embedding(num_embeddings=n_feats,
-                                           embedding_dim=n_feat_embed)
-        else:
-            raise RuntimeError("The feat type should be in ['char', 'bert', 'tag'].")
+                                       pad_index=char_pad_index)
+            self.n_input += n_feat_embed
+        if 'bert' in feat:
+            self.bert_embed = TransformerEmbedding(model=bert,
+                                                   n_layers=n_bert_layers,
+                                                   n_out=n_feat_embed,
+                                                   pad_index=bert_pad_index,
+                                                   dropout=mix_dropout)
+            self.n_input += self.bert_embed.n_out
         self.embed_dropout = IndependentDropout(p=embed_dropout)
 
-        # the lstm layer
-        self.lstm = VariationalLSTM(input_size=n_embed+n_feat_embed,
+        self.lstm = VariationalLSTM(self.n_input,
                                     hidden_size=n_lstm_hidden,
                                     num_layers=n_lstm_layers,
                                     bidirectional=True,
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        # the MLP layers
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_bin_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
@@ -840,12 +883,12 @@ class VIDependencyModel(nn.Module):
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
-        # the Biaffine layers
         self.arc_attn = Biaffine(n_in=n_mlp_arc, bias_x=True, bias_y=False)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
+        self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
-        self.vi = (MFVIDependency if inference == 'mfvi' else LBPDependency)(max_iter)
+        self.vi = MFVIDependency(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.pad_index = pad_index
         self.unk_index = unk_index
@@ -861,10 +904,10 @@ class VIDependencyModel(nn.Module):
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
                 Word indices.
-            feats (~torch.LongTensor):
-                Feat indices.
-                If feat is ``'char'`` or ``'bert'``, the size of feats should be ``[batch_size, seq_len, fix_len]``.
-                if ``'tag'``, the size is ``[batch_size, seq_len]``.
+            feats (list[~torch.LongTensor]):
+                A list of feat indices.
+                The size of indices is ``[batch_size, seq_len, fix_len]`` if feat is ``'char'`` or ``'bert'``,
+                or ``[batch_size, seq_len]`` otherwise.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
@@ -886,8 +929,15 @@ class VIDependencyModel(nn.Module):
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
             word_embed += self.pretrained(words)
-        feat_embed = self.feat_embed(feats)
-        word_embed, feat_embed = self.embed_dropout(word_embed, feat_embed)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
         # concatenate the word and feat representations
         embed = torch.cat((word_embed, feat_embed), -1)
 
@@ -918,7 +968,7 @@ class VIDependencyModel(nn.Module):
 
         return s_arc, s_sib, s_grd, s_rel
 
-    def loss(self, s_arc, s_sib, s_grd, s_rel, arcs, rels, mask, partial=False):
+    def loss(self, s_arc, s_sib, s_grd, s_rel, arcs, rels, mask):
         r"""
         Args:
             s_arc (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -935,17 +985,13 @@ class VIDependencyModel(nn.Module):
                 The tensor of gold-standard labels.
             mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
                 The mask for covering the unpadded tokens.
-            partial (bool):
-                ``True`` denotes the trees are partially annotated. Default: ``False``.
 
         Returns:
             ~torch.Tensor:
                 The training loss.
         """
 
-        if partial:
-            mask = mask & arcs.ge(0)
-        arc_loss, marginals = self.vi((s_arc, s_grd, s_sib), mask, arcs)
+        arc_loss, marginals = self.vi((s_arc, s_sib, s_grd), mask, arcs)
         s_rel, rels = s_rel[mask], rels[mask]
         s_rel = s_rel[torch.arange(len(rels)), arcs[mask]]
         rel_loss = self.criterion(s_rel, rels)

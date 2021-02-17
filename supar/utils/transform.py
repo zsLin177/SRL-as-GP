@@ -650,7 +650,7 @@ class Tree(Transform):
                 children = [leaves[i]]
             else:
                 children = track(node) + track(node)
-            if label.endswith('|<>'):
+            if label is None or label.endswith('|<>'):
                 return children
             labels = label.split('+')
             tree = nltk.Tree(labels[-1], children)

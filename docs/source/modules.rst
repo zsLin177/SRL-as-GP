@@ -12,10 +12,10 @@ Affine
 .. autoclass:: Triaffine
     :members:
 
-BertEmbedding
+TransformerEmbedding
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: BertEmbedding
+.. autoclass:: TransformerEmbedding
     :members:
 
 .. autoclass:: ScalarMix

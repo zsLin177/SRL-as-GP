@@ -12,7 +12,7 @@ def main():
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
-    subparser.add_argument('--feat', '-f', default='tag,char,lemma', help='additional features to use，separated by commas.')
+    subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'lemma', 'bert'], nargs='+', help='features to use')
     subparser.add_argument('--build', '-b', action='store_true', help='whether to build the model first')
     subparser.add_argument('--max-len', type=int, help='max length of the sentences')
     subparser.add_argument('--buckets', default=32, type=int, help='max num of buckets to use')
@@ -22,6 +22,7 @@ def main():
     subparser.add_argument('--embed', default='data/glove.6B.100d.txt', help='path to pretrained embeddings')
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
+    subparser.add_argument('--n-embed-proj', default=125, type=int, help='dimension of projected embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     # evaluate

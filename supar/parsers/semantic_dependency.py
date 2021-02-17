@@ -227,7 +227,8 @@ class BiaffineSemanticDependencyParser(Parser):
         transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+        embed = Embedding.load(args.embed, args.unk) if args.embed else None
+        WORD.build(train, args.min_freq, embed)
         if TAG is not None:
             TAG.build(train)
         if CHAR is not None:
@@ -243,6 +244,8 @@ class BiaffineSemanticDependencyParser(Parser):
             'char_pad_index': CHAR.pad_index if CHAR is not None else None,
             'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
+            'n_pretrained': embed.dim if embed else 0,
+            'n_embed_proj':  args.n_embed_proj if embed else 0,
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index
         })
@@ -467,7 +470,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+        embed = Embedding.load(args.embed, args.unk) if args.embed else None
+        WORD.build(train, args.min_freq, embed)
         if TAG is not None:
             TAG.build(train)
         if CHAR is not None:
@@ -483,6 +487,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             'char_pad_index': CHAR.pad_index if CHAR is not None else None,
             'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
+            'n_pretrained': embed.dim if embed else 0,
+            'n_embed_proj':  args.n_embed_proj if embed else 0,
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index
         })

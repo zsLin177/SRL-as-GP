@@ -85,6 +85,14 @@ class CRFDependency(nn.Module):
     in :math:`O(n^3)` (:cite:`zhang-etal-2020-efficient`).
     """
 
+    def __init__(self, multiroot=False):
+        super().__init__()
+
+        self.multiroot = multiroot
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(multiroot={self.multiroot})"
+
     @torch.enable_grad()
     def forward(self, scores, mask, target=None, mbr=False, partial=False):
         r"""
@@ -176,8 +184,8 @@ class CRFDependency(nn.Module):
             cr = stripe(s_i, n, w, (0, 1)) + stripe(s_c, n, w, (1, w), 0)
             cr.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
             s_c.diagonal(w).copy_(cr.permute(2, 0, 1).logsumexp(-1))
-            # disable multi words to modify the root
-            s_c[0, w][lens.ne(w)] = float('-inf')
+            if not self.multiroot:
+                s_c[0, w][lens.ne(w)] = float('-inf')
 
         return s_c[0].gather(0, lens.unsqueeze(0)).sum()
 
@@ -187,6 +195,14 @@ class CRF2oDependency(nn.Module):
     Second-order TreeCRF for calculating partitions and marginals of projective dependency trees
     in :math:`O(n^3)` (:cite:`zhang-etal-2020-efficient`).
     """
+
+    def __init__(self, multiroot=False):
+        super().__init__()
+
+        self.multiroot = multiroot
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(multiroot={self.multiroot})"
 
     @torch.enable_grad()
     def forward(self, scores, mask, target=None, mbr=True, partial=False):
@@ -311,8 +327,8 @@ class CRF2oDependency(nn.Module):
             cr = stripe(s_i, n, w, (0, 1)) + stripe(s_c, n, w, (1, w), 0)
             cr.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
             s_c.diagonal(w).copy_(cr.permute(2, 0, 1).logsumexp(-1))
-            # disable multi words to modify the root
-            s_c[0, w][lens.ne(w)] = float('-inf')
+            if not self.multiroot:
+                s_c[0, w][lens.ne(w)] = float('-inf')
 
         return s_c[0].gather(0, lens.unsqueeze(0)).sum()
 

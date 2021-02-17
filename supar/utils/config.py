@@ -1,20 +1,19 @@
 # -*- coding: utf-8 -*-
 
+import os
 from ast import literal_eval
 from configparser import ConfigParser
+
+import supar
+import torch
 
 
 class Config(object):
 
-    def __init__(self, conf=None, **kwargs):
+    def __init__(self, **kwargs):
         super(Config, self).__init__()
 
-        config = ConfigParser()
-        config.read(conf or [])
-        self.update({**dict((name, literal_eval(value))
-                            for section in config.sections()
-                            for name, value in config.items(section)),
-                     **kwargs})
+        self.update(kwargs)
 
     def __repr__(self):
         s = line = "-" * 20 + "-+-" + "-" * 30 + "\n"
@@ -51,3 +50,18 @@ class Config(object):
 
     def pop(self, key, val=None):
         return self.__dict__.pop(key, val)
+
+    @classmethod
+    def load(cls, conf=None, **kwargs):
+        config = ConfigParser()
+        if conf is not None:
+            if conf in supar.CONFIG:
+                url = supar.CONFIG[conf]
+                conf = os.path.join(torch.hub.get_dir(), 'checkpoints', os.path.basename(url))
+                if not os.path.exists(conf):
+                    torch.hub.download_url_to_file(url, conf)
+        config.read(conf or [])
+        return cls(**{**dict((name, literal_eval(value))
+                             for section in config.sections()
+                             for name, value in config.items(section)),
+                      **kwargs})

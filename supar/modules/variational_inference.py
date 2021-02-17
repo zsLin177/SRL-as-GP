@@ -4,89 +4,6 @@ import torch
 import torch.nn as nn
 
 
-class LBPDependency(nn.Module):
-    r"""
-    Loopy Belief Propagation for approximately calculating marginals of dependency trees.
-    """
-
-    def __init__(self, max_iter=3):
-        super().__init__()
-
-        self.max_iter = max_iter
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(max_iter={self.max_iter})"
-
-    @torch.enable_grad()
-    def forward(self, scores, mask, target=None):
-        r"""
-        Args:
-            scores (~torch.Tensor, ~torch.Tensor):
-                Tuple of three tensors `s_edge`, `s_sib` and `s_grd`.
-                `s_edge` (``[batch_size, seq_len, seq_len]``) holds Scores of all possible dependent-head pairs.
-                `s_sib` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-sibling triples.
-                `s_grd` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-grandparent triples.
-            mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
-                The mask to avoid aggregation on padding tokens.
-            target (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
-                A Tensor of gold-standard dependent-head pairs. Default: ``None``.
-
-        Returns:
-            ~torch.Tensor, ~torch.Tensor:
-                The first is the training loss averaged by the number of tokens, which won't be returned if ``target=None``.
-                The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
-        """
-
-        logQ = self.lbp(*(s.requires_grad_() for s in scores), mask)
-        marginals = logQ.exp()
-
-        if target is None:
-            return marginals
-        loss = -logQ.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
-
-        return loss, marginals
-
-    def lbp(self, s_edge, s_sib, s_grd, mask):
-        batch_size, seq_len = mask.shape
-        hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
-        mask = mask.index_fill(1, hs.new_tensor(0), 1)
-        # [seq_len, seq_len, batch_size], (h->m)
-        mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
-        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
-        mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
-        mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
-        # log potentials of unary and binary factors
-        # [seq_len, seq_len, batch_size], (h->m)
-        s_edge = s_edge.permute(2, 1, 0)
-        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        s_sib = s_sib.permute(2, 1, 3, 0)
-        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        s_grd = s_grd.permute(2, 1, 3, 0)
-
-        # log beliefs
-        # [seq_len, seq_len, batch_size], (h->m)
-        b = s_edge.new_zeros(seq_len, seq_len, batch_size)
-        # log messages of siblings
-        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        m_sib = s_sib.new_zeros(seq_len, seq_len, seq_len, batch_size)
-        # log messages of grand-parents
-        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        m_grd = s_grd.new_zeros(seq_len, seq_len, seq_len, batch_size)
-
-        for _ in range(self.max_iter):
-            b = b.log_softmax(0)
-            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + s(ij->ik))
-            m = b.unsqueeze(2) - m_sib
-            m_sib = (m + s_sib.unsqueeze(-1)).logsumexp(-1).log_softmax(0)
-            m = b.unsqueeze(2) - m_grd
-            m_grd = (m + s_sib.unsqueeze(-1)).logsumexp(-1).log_softmax(0)
-            # b(ij) = s(ij) + sum(m(ik->ij)), k != i,j
-            b = s_edge + ((m_sib + m_grd) * mask2o).sum(3)
-
-        return b.permute(3, 2, 1, 0).log_softmax(-1)
-
-
 class MFVIDependency(nn.Module):
     r"""
     Mean Field Variational Inference for approximately calculating marginals
@@ -109,6 +26,7 @@ class MFVIDependency(nn.Module):
                 Tuple of three tensors `s_edge`, `s_sib` and `s_grd`.
                 `s_edge` (``[batch_size, seq_len, seq_len]``) holds Scores of all possible dependent-head pairs.
                 `s_sib` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-sibling triples.
+                `s_cop` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-coparent triples.
                 `s_grd` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-grandparent triples.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask to avoid aggregation on padding tokens.

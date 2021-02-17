@@ -134,7 +134,7 @@ class Triaffine(nn.Module):
         if self.bias_y:
             y = torch.cat((y, torch.ones_like(y[..., :1])), -1)
         w = torch.einsum('bzk,oikj->bozij', z, self.weight)
-        # [batch_size, seq_len, seq_len, seq_len]
+        # [batch_size, n_out, seq_len, seq_len, seq_len]
         s = torch.einsum('bxi,bozij,byj->bozxy', x, w, y)
         # remove dim 1 if n_out == 1
         s = s.squeeze(1)
