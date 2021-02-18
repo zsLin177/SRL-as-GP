@@ -67,7 +67,7 @@ class LBPDependency(nn.Module):
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        b = s_arc.new_zeros(2, seq_len, seq_len, batch_size)
+        q = s_arc.new_zeros(2, seq_len, seq_len, batch_size).log_softmax(0)
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
         m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
@@ -76,18 +76,22 @@ class LBPDependency(nn.Module):
         m_grd = s_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
-            b = b.log_softmax(0)
-            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + s(ij->ik))
-            m = b.unsqueeze(3) - m_sib
+            # m(ik->ij) = logsumexp(q(ik) - m(ij->ik) + s(ij->ik))
+            m = q.unsqueeze(3) - m_sib
             m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_sib)).logsumexp(0)))
             m_sib = m_sib.transpose(2, 3).log_softmax(0)
-            m = b.unsqueeze(3) - m_grd
+            m = q.unsqueeze(3) - m_grd
             m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_grd)).logsumexp(0)))
             m_grd = m_grd.transpose(2, 3).log_softmax(0)
-            # b(ij) = s(ij) + sum(m(ik->ij)), k != i,j
-            b = s_arc + ((m_sib + m_grd) * mask2o).sum(3)
+            # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
+            q = s_arc + ((m_sib + m_grd) * mask2o).sum(3)
+            q0, q1 = q.log_softmax(0)
+            # exactly-1 constraint
+            q0 = q0.masked_fill(~mask, 0)
+            q1 = q1 + q0.sum(0) - q0
+            q = torch.stack(((q1.exp().masked_fill(~mask, 0).sum(0) - q1).log(), q1))
 
-        return b.permute(3, 2, 1, 0).softmax(-1)[..., 1]
+        return q.permute(3, 2, 1, 0).exp()[..., 1]
 
 
 class MFVIDependency(nn.Module):
@@ -230,7 +234,7 @@ class LBPSemanticDependency(nn.Module):
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        b = s_edge.new_zeros(2, seq_len, seq_len, batch_size)
+        q = s_edge.new_zeros(2, seq_len, seq_len, batch_size)
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
         m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
@@ -242,21 +246,21 @@ class LBPSemanticDependency(nn.Module):
         m_grd = s_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
-            b = b.log_softmax(0)
-            # m(ik->ij) = logsumexp(b(ik) - m(ij->ik) + s(ij->ik))
-            m = b.unsqueeze(3) - m_sib
+            q = q.log_softmax(0)
+            # m(ik->ij) = logsumexp(q(ik) - m(ij->ik) + s(ij->ik))
+            m = q.unsqueeze(3) - m_sib
             m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_sib)).logsumexp(0)))
             m_sib = m_sib.transpose(2, 3).log_softmax(0)
-            m = b.unsqueeze(3) - m_cop
+            m = q.unsqueeze(3) - m_cop
             m_cop = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_cop)).logsumexp(0)))
             m_cop = m_cop.transpose(2, 3).log_softmax(0)
-            m = b.unsqueeze(3) - m_grd
+            m = q.unsqueeze(3) - m_grd
             m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_grd)).logsumexp(0)))
             m_grd = m_grd.transpose(2, 3).log_softmax(0)
-            # b(ij) = s(ij) + sum(m(ik->ij)), k != i,j
-            b = s_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
+            # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
+            q = s_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
 
-        return b.permute(3, 2, 1, 0).log_softmax(-1)
+        return q.permute(3, 2, 1, 0).log_softmax(-1)
 
 
 class MFVISemanticDependency(nn.Module):
