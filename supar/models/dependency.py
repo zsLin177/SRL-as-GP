@@ -885,9 +885,11 @@ class VIDependencyModel(nn.Module):
 
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
-        self.mlp_bin_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_bin_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_bin_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_sib_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_sib_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_grd_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_grd_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_grd_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
@@ -957,18 +959,20 @@ class VIDependencyModel(nn.Module):
         # apply MLPs to the BiLSTM output states
         arc_d = self.mlp_arc_d(x)
         arc_h = self.mlp_arc_h(x)
-        bin_d = self.mlp_bin_d(x)
-        bin_h = self.mlp_bin_h(x)
-        bin_g = self.mlp_bin_g(x)
+        sib_d = self.mlp_sib_d(x)
+        sib_h = self.mlp_sib_h(x)
+        grd_g = self.mlp_grd_g(x)
+        grd_d = self.mlp_grd_d(x)
+        grd_h = self.mlp_grd_h(x)
         rel_d = self.mlp_rel_d(x)
         rel_h = self.mlp_rel_h(x)
 
         # [batch_size, seq_len, seq_len]
         s_arc = self.arc_attn(arc_d, arc_h)
         # [batch_size, seq_len, seq_len, seq_len]
-        s_sib = self.sib_attn(bin_d, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_sib = self.sib_attn(sib_d, sib_d, sib_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, seq_len]
-        s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_grd = self.grd_attn(grd_g, grd_d, grd_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_rels]
         s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
 
