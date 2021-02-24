@@ -2,13 +2,12 @@
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 
 class LBPDependency(nn.Module):
     r"""
     Loopy Belief Propagation for approximately calculating marginals
-    of dependency trees (:cite:`wang-etal-2020-second`).
+    of dependency trees.
     """
 
     def __init__(self, max_iter=3):
@@ -39,59 +38,54 @@ class LBPDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        batch_size, seq_len, _ = mask.shape
-        marginals = self.lbp(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.lbp(*(s.requires_grad_() for s in scores), mask)
+        marginals = logQ.exp()
 
         if target is None:
             return marginals
-        loss = F.binary_cross_entropy(marginals[mask], F.one_hot(target, seq_len)[mask].float())
+        loss = -logQ.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
 
         return loss, marginals
 
     def lbp(self, s_arc, s_sib, s_grd, mask):
-        batch_size, seq_len, _ = mask.shape
-        hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        batch_size, seq_len = mask.shape
+        hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        mask = mask.index_fill(1, hs.new_tensor(0), 1)
         # [seq_len, seq_len, batch_size], (h->m)
-        mask = mask.permute(2, 1, 0)
+        mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
         mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
         # log potentials of unary and binary factors
-        # [2, seq_len, seq_len, batch_size], (h->m)
-        s_arc = torch.stack((torch.zeros_like(s_arc), s_arc)).permute(0, 3, 2, 1)
+        # [seq_len, seq_len, batch_size], (h->m)
+        s_arc = s_arc.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        s_sib = s_sib.permute(2, 1, 3, 0)
+        s_sib = s_sib.permute(2, 1, 3, 0).masked_fill_(~mask2o, float('-inf'))
         # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        s_grd = s_grd.permute(2, 1, 3, 0)
+        s_grd = s_grd.permute(2, 1, 3, 0).masked_fill_(~mask2o, float('-inf'))
 
         # log beliefs
-        # [2, seq_len, seq_len, batch_size], (h->m)
-        q = s_arc.new_zeros(2, seq_len, seq_len, batch_size).log_softmax(0)
+        # [seq_len, seq_len, batch_size], (h->m)
+        q = s_arc.new_zeros(seq_len, seq_len, batch_size).masked_fill_(~mask[0].unsqueeze(1), float('-inf'))
         # log messages of siblings
-        # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
-        m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
+        m_sib = s_sib.new_zeros(seq_len, seq_len, seq_len, batch_size)
         # log messages of grand-parents
-        # [2, seq_len, seq_len, seq_len, batch_size], (h->m->g)
-        m_grd = s_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
+        m_grd = s_grd.new_zeros(seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
+            q = q.log_softmax(0)
             # m(ik->ij) = logsumexp(q(ik) - m(ij->ik) + s(ij->ik))
-            m = q.unsqueeze(3) - m_sib
-            m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_sib)).logsumexp(0)))
-            m_sib = m_sib.transpose(2, 3).log_softmax(0)
-            m = q.unsqueeze(3) - m_grd
-            m_grd = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_grd)).logsumexp(0)))
-            m_grd = m_grd.transpose(2, 3).log_softmax(0)
+            m = q.unsqueeze(2) - m_sib
+            m_sib = torch.logaddexp(s_sib + m, m.logsumexp(0)).transpose(1, 2).log_softmax(0)
+            m = q.unsqueeze(2) - m_grd
+            m_grd = torch.logaddexp(s_grd + m, m.logsumexp(0)).transpose(1, 2).log_softmax(0)
             # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
-            q = s_arc + ((m_sib + m_grd) * mask2o).sum(3)
-            q0, q1 = q.log_softmax(0)
-            # exactly-1 constraint
-            q0 = q0.masked_fill(~mask, 0)
-            q1 = q1 + q0.sum(0) - q0
-            q = torch.stack(((q1.exp().masked_fill(~mask, 0).sum(0) - q1).log(), q1))
+            q = s_arc + ((m_sib + m_grd) * mask2o).sum(2)
 
-        return q.permute(3, 2, 1, 0).exp()[..., 1]
+        return q.permute(2, 1, 0).log_softmax(-1)
 
 
 class MFVIDependency(nn.Module):
@@ -128,20 +122,21 @@ class MFVIDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        batch_size, seq_len, _ = mask.shape
-        marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.mfvi(*(s.requires_grad_() for s in scores), mask)
+        marginals = logQ.exp()
 
         if target is None:
             return marginals
-        loss = F.binary_cross_entropy(marginals[mask], F.one_hot(target, seq_len)[mask].float())
+        loss = -logQ.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
 
         return loss, marginals
 
     def mfvi(self, s_arc, s_sib, s_grd, mask):
-        batch_size, seq_len, _ = mask.shape
-        hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        batch_size, seq_len = mask.shape
+        hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0].unbind()
+        mask = mask.index_fill(1, hs.new_tensor(0), 1)
         # [seq_len, seq_len, batch_size], (h->m)
-        mask = mask.permute(2, 1, 0)
+        mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
@@ -155,18 +150,16 @@ class MFVIDependency(nn.Module):
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (h->m)
-        q = s_arc.new_empty(seq_len, seq_len, batch_size).fill_(0.5)
+        q = s_arc.new_zeros(seq_len, seq_len, batch_size).masked_fill_(~mask[0].unsqueeze(1), float('-inf'))
 
         for _ in range(self.max_iter):
+            q = q.softmax(0)
             # f(ij) = sum(q(ik)s^sib(ij,ik) + q(jk)s^grd(ij,jk)), k != i,j
             f = (q.unsqueeze(1) * s_sib + q.unsqueeze(0) * s_grd).sum(2)
             # q(ij) = s(ij) + f(ij)
-            q0, q1 = torch.stack((torch.zeros_like(q), s_arc + f)).log_softmax(0)
-            # exactly-1 constraint
-            q0 = q0.masked_fill(~mask, 0)
-            q = (q1 + q0.sum(0) - q0).exp()
+            q = (s_arc + f).masked_fill_(~mask[0].unsqueeze(1), float('-inf'))
 
-        return q.permute(2, 1, 0)
+        return q.permute(2, 1, 0).log_softmax(-1)
 
 
 class LBPSemanticDependency(nn.Module):
