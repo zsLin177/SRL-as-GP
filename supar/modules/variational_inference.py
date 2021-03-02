@@ -67,7 +67,7 @@ class LBPDependency(nn.Module):
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        q = s_arc.new_zeros(2, seq_len, seq_len, batch_size).log_softmax(0)
+        q = s_arc.new_zeros(2, seq_len, seq_len, batch_size)
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
         m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
@@ -76,6 +76,7 @@ class LBPDependency(nn.Module):
         m_grd = s_grd.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
+            q = q.log_softmax(0)
             # m(ik->ij) = logsumexp(q(ik) - m(ij->ik) + s(ij->ik))
             m = q.unsqueeze(3) - m_sib
             m_sib = torch.stack((m.logsumexp(0), torch.stack((m[0], m[1] + s_sib)).logsumexp(0)))
@@ -85,15 +86,8 @@ class LBPDependency(nn.Module):
             m_grd = m_grd.transpose(2, 3).log_softmax(0)
             # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
             q = s_arc + ((m_sib + m_grd) * mask2o).sum(3)
-            q0, q1 = q.log_softmax(0)
-            # exactly-1 constraint
-            q1 = q1 + q0.masked_fill(~mask, 0).sum(0) - q0
-            q0 = q1.unsqueeze(1).repeat(1, seq_len, 1, 1)
-            q0.diagonal().fill_(float('-inf'))
-            q0 = q0.logsumexp(0)
-            q = torch.stack((q0, q1))
 
-        return q.permute(3, 2, 1, 0).exp()[..., 1]
+        return q.permute(3, 2, 1, 0).softmax(-1)[..., 1]
 
 
 class MFVIDependency(nn.Module):
@@ -157,17 +151,14 @@ class MFVIDependency(nn.Module):
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (h->m)
-        q = s_arc.new_empty(seq_len, seq_len, batch_size).fill_(0.5)
+        q = s_arc.new_empty(seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
-            # f(ij) = sum(q(ik)s^sib(ij,ik) + q(jk)s^grd(ij,jk)), k != i,j
-            f = (q.unsqueeze(1) * s_sib + q.unsqueeze(0) * s_grd).sum(2)
-            # q(ij) = s(ij) + f(ij)
-            q0, q1 = torch.stack((torch.zeros_like(q), s_arc + f)).log_softmax(0)
-            # exactly-1 constraint
-            q = (q1 + q0.sum(0) - q0).exp()
+            q = q.sigmoid()
+            # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(jk)s^grd(ij,jk)), k != i,j
+            q = s_arc + (q.unsqueeze(1) * s_sib + q.unsqueeze(0) * s_grd).sum(2)
 
-        return q.permute(2, 1, 0)
+        return q.permute(2, 1, 0).sigmoid()
 
 
 class LBPSemanticDependency(nn.Module):
@@ -205,12 +196,11 @@ class LBPSemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len, 2]``.
         """
 
-        logQ = self.lbp(*(s.requires_grad_() for s in scores), mask)
-        marginals = logQ.exp()
+        marginals = self.lbp(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
             return marginals
-        loss = -logQ.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
+        loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
 
         return loss, marginals
 
@@ -261,7 +251,7 @@ class LBPSemanticDependency(nn.Module):
             # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
             q = s_edge + ((m_sib + m_cop + m_grd) * mask2o).sum(3)
 
-        return q.permute(3, 2, 1, 0).log_softmax(-1)
+        return q.permute(3, 2, 1, 0).softmax(-1)[..., 1]
 
 
 class MFVISemanticDependency(nn.Module):
@@ -299,12 +289,11 @@ class MFVISemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len, 2]``.
         """
 
-        logQ = self.mfvi(*(s.requires_grad_() for s in scores), mask)
-        marginals = logQ.exp()
+        marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
             return marginals
-        loss = -logQ.gather(-1, target.unsqueeze(-1))[mask].sum() / mask.sum()
+        loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
 
         return loss, marginals
 
@@ -327,14 +316,12 @@ class MFVISemanticDependency(nn.Module):
         s_grd = s_grd.permute(2, 1, 3, 0) * mask2o
 
         # posterior distributions
-        # [2, seq_len, seq_len, batch_size], (h->m)
-        q = s_edge.new_zeros(2, seq_len, seq_len, batch_size)
+        # [seq_len, seq_len, batch_size], (h->m)
+        q = s_edge.new_zeros(seq_len, seq_len, batch_size)
 
         for _ in range(self.max_iter):
-            q = q.softmax(0)
-            # f(ij) = sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
-            f = (q[1].unsqueeze(1) * s_sib + q[1].transpose(0, 1).unsqueeze(0) * s_cop + q[1].unsqueeze(0) * s_grd).sum(2)
-            # q(ij) = s(ij) + f(ij)
-            q = torch.stack((torch.zeros_like(q[0]), s_edge + f))
+            q = q.sigmoid()
+            # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
+            q = s_edge + (q.unsqueeze(1) * s_sib + q.transpose(0, 1).unsqueeze(0) * s_cop + q.unsqueeze(0) * s_grd).sum(2)
 
-        return q.permute(3, 2, 1, 0).log_softmax(-1)
+        return q.permute(2, 1, 0).sigmoid()
