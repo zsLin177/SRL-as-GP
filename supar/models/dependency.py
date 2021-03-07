@@ -6,7 +6,7 @@ from supar.modules import MLP, CharLSTM, TransformerEmbedding, VariationalLSTM
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.treecrf import CRF2oDependency, CRFDependency, MatrixTree
-from supar.modules.variational_inference import MFVIDependency, LBPDependency
+from supar.modules.variational_inference import MFVIDependency
 from supar.utils import Config
 from supar.utils.alg import eisner, eisner2o, mst
 from supar.utils.transform import CoNLL
@@ -845,7 +845,6 @@ class VIDependencyModel(nn.Module):
                  mlp_dropout=.33,
                  inference='mfvi',
                  max_iter=3,
-                 interpolation=0.1,
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
@@ -885,11 +884,9 @@ class VIDependencyModel(nn.Module):
 
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
+        self.mlp_sib_s = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
         self.mlp_sib_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
         self.mlp_sib_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_grd_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_grd_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_grd_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
@@ -897,9 +894,8 @@ class VIDependencyModel(nn.Module):
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
-        self.vi = (MFVIDependency if inference == 'mfvi' else LBPDependency)(max_iter)
+        self.vi = MFVIDependency(max_iter)
         self.criterion = nn.CrossEntropyLoss()
-        self.interpolation = interpolation
         self.pad_index = pad_index
         self.unk_index = unk_index
 
@@ -959,43 +955,38 @@ class VIDependencyModel(nn.Module):
         # apply MLPs to the BiLSTM output states
         arc_d = self.mlp_arc_d(x)
         arc_h = self.mlp_arc_h(x)
+        sib_s = self.mlp_sib_s(x)
         sib_d = self.mlp_sib_d(x)
         sib_h = self.mlp_sib_h(x)
-        grd_g = self.mlp_grd_g(x)
-        grd_d = self.mlp_grd_d(x)
-        grd_h = self.mlp_grd_h(x)
         rel_d = self.mlp_rel_d(x)
         rel_h = self.mlp_rel_h(x)
 
         # [batch_size, seq_len, seq_len]
         s_arc = self.arc_attn(arc_d, arc_h)
         # [batch_size, seq_len, seq_len, seq_len]
-        s_sib = self.sib_attn(sib_d, sib_d, sib_h).permute(0, 3, 1, 2)
+        s_sib = self.sib_attn(sib_s, sib_d, sib_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, seq_len]
-        s_grd = self.grd_attn(grd_g, grd_d, grd_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_rels]
         s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
         # set the scores that exceed the length of each sentence to -inf
         s_arc.masked_fill_(~mask.unsqueeze(1), float('-inf'))
 
-        return s_arc, s_sib, s_grd, s_rel
+        return s_arc, s_sib, s_rel
 
-    def loss(self, s_arc, s_sib, s_grd, s_rel, arcs, rels, mask):
+    def loss(self, s_arc, s_sib, s_rel, arcs, rels, mask):
         r"""
         Args:
             s_arc (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible arcs.
             s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
                 Scores of all possible dependent-head-sibling triples.
-            s_grd (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
-                Scores of all possible dependent-head-grandparent triples.
             s_rel (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each arc.
             arcs (~torch.LongTensor): ``[batch_size, seq_len]``.
                 The tensor of gold-standard arcs.
             rels (~torch.LongTensor): ``[batch_size, seq_len]``.
                 The tensor of gold-standard labels.
-            mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
+            mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
                 The mask for covering the unpadded tokens.
 
         Returns:
@@ -1003,12 +994,11 @@ class VIDependencyModel(nn.Module):
                 The training loss.
         """
 
-        arc_mask = mask.index_fill(1, arcs.new_tensor(0), 1).unsqueeze(1) & mask.unsqueeze(2)
-        arc_loss, marginals = self.vi((s_arc, s_sib, s_grd), arc_mask, arcs)
+        arc_loss, marginals = self.vi((s_arc, s_sib), mask, arcs)
         s_rel, rels = s_rel[mask], rels[mask]
         s_rel = s_rel[torch.arange(len(rels)), arcs[mask]]
         rel_loss = self.criterion(s_rel, rels)
-        loss = self.interpolation * rel_loss + (1 - self.interpolation) * arc_loss
+        loss = arc_loss + rel_loss
         return loss, marginals
 
     def decode(self, s_arc, s_rel, mask, tree=False, proj=False):
@@ -1031,7 +1021,6 @@ class VIDependencyModel(nn.Module):
         """
 
         lens = mask.sum(1)
-        s_arc = s_arc.masked_fill(~mask.index_fill(1, lens.new_tensor(0), 1).unsqueeze(1), float('-inf'))
         arc_preds = s_arc.argmax(-1)
         bad = [not CoNLL.istree(seq[1:i+1], proj) for i, seq in zip(lens.tolist(), arc_preds.tolist())]
         if tree and any(bad):

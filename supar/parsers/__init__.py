@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from .constituency import CRFConstituencyParser
+from .constituency import CRFConstituencyParser, VIConstituencyParser
 from .dependency import (BiaffineDependencyParser, CRF2oDependencyParser,
                          CRFDependencyParser, CRFNPDependencyParser,
                          VIDependencyParser)
@@ -14,6 +14,7 @@ __all__ = ['BiaffineDependencyParser',
            'CRF2oDependencyParser',
            'VIDependencyParser',
            'CRFConstituencyParser',
+           'VIConstituencyParser',
            'BiaffineSemanticDependencyParser',
            'VISemanticDependencyParser',
            'Parser']

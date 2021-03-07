@@ -3,8 +3,8 @@
 from .parsers import (BiaffineDependencyParser,
                       BiaffineSemanticDependencyParser, CRF2oDependencyParser,
                       CRFConstituencyParser, CRFDependencyParser,
-                      CRFNPDependencyParser, Parser, VIDependencyParser,
-                      VISemanticDependencyParser)
+                      CRFNPDependencyParser, Parser, VIConstituencyParser,
+                      VIDependencyParser, VISemanticDependencyParser)
 
 __all__ = ['BiaffineDependencyParser',
            'CRFNPDependencyParser',
@@ -12,6 +12,7 @@ __all__ = ['BiaffineDependencyParser',
            'CRF2oDependencyParser',
            'VIDependencyParser',
            'CRFConstituencyParser',
+           'VIConstituencyParser',
            'BiaffineSemanticDependencyParser',
            'VISemanticDependencyParser',
            'Parser']
@@ -24,6 +25,7 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              CRF2oDependencyParser,
                                              VIDependencyParser,
                                              CRFConstituencyParser,
+                                             VIConstituencyParser,
                                              BiaffineSemanticDependencyParser,
                                              VISemanticDependencyParser]}
 

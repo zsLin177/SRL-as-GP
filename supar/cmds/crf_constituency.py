@@ -30,10 +30,10 @@ def main():
     subparser.add_argument('--data', default='data/ptb/test.pid', help='path to dataset')
     # predict
     subparser = subparsers.add_parser('predict', help='Use a trained parser to make predictions.')
-    subparser.add_argument('--prob', action='store_true', help='whether to output probs')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
     subparser.add_argument('--data', default='data/ptb/test.pid', help='path to dataset')
     subparser.add_argument('--pred', default='pred.pid', help='path to predicted result')
+    subparser.add_argument('--prob', action='store_true', help='whether to output probs')
     parse(parser)
 
 

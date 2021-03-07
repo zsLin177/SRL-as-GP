@@ -8,9 +8,9 @@ from .scalar_mix import ScalarMix
 from .transformer import TransformerEmbedding
 from .treecrf import (CRF2oDependency, CRFConstituency, CRFDependency,
                       MatrixTree)
-from .variational_inference import (LBPDependency, LBPSemanticDependency,
+from .variational_inference import (LBPSemanticDependency, MFVIConstituency,
                                     MFVIDependency, MFVISemanticDependency)
 
 __all__ = ['MLP', 'TransformerEmbedding', 'Biaffine', 'CharLSTM', 'CRF2oDependency', 'CRFConstituency', 'CRFDependency',
-           'IndependentDropout', 'LBPDependency', 'LBPSemanticDependency', 'MatrixTree', 'MFVIDependency',
+           'IndependentDropout', 'LBPSemanticDependency', 'MatrixTree', 'MFVIConstituency', 'MFVIDependency',
            'MFVISemanticDependency', 'ScalarMix', 'SharedDropout', 'Triaffine', 'VariationalLSTM']

@@ -4,7 +4,7 @@ import os
 
 import torch
 import torch.nn as nn
-from supar.models import CRFConstituencyModel
+from supar.models import CRFConstituencyModel, VIConstituencyModel
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, eos, pad, unk
@@ -135,8 +135,8 @@ class CRFConstituencyParser(Parser):
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
             mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_span, s_label = self.model(words, feats)
-            loss, _ = self.model.loss(s_span, s_label, charts, mask, self.args.mbr)
+            s_con, s_label = self.model(words, feats)
+            loss, _ = self.model.loss(s_con, s_label, charts, mask, self.args.mbr)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
@@ -156,9 +156,9 @@ class CRFConstituencyParser(Parser):
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
             mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_span, s_label = self.model(words, feats)
-            loss, s_span = self.model.loss(s_span, s_label, charts, mask, self.args.mbr)
-            chart_preds = self.model.decode(s_span, s_label, mask)
+            s_con, s_label = self.model(words, feats)
+            loss, s_con = self.model.loss(s_con, s_label, charts, mask, self.args.mbr)
+            chart_preds = self.model.decode(s_con, s_label, mask)
             # since the evaluation relies on terminals,
             # the tree should be first built and then factorized
             preds = [Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
@@ -181,14 +181,14 @@ class CRFConstituencyParser(Parser):
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
             mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_span, s_label = self.model(words, feats)
+            s_con, s_label = self.model(words, feats)
             if self.args.mbr:
-                s_span = self.model.crf(s_span, mask, mbr=True)
-            chart_preds = self.model.decode(s_span, s_label, mask)
+                s_con = self.model.crf(s_con, mask, mbr=True)
+            chart_preds = self.model.decode(s_con, s_label, mask)
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                probs.extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span.unbind())])
+                probs.extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
         if self.args.prob:
             preds['probs'] = probs
 
@@ -281,3 +281,166 @@ class CRFConstituencyParser(Parser):
         scheduler = ExponentialLR(optimizer, **scheduler_args)
 
         return cls(args, model, transform, optimizer, scheduler)
+
+
+class VIConstituencyParser(CRFConstituencyParser):
+    r"""
+    The implementation of Constituency Parser using variational inference.
+    """
+
+    NAME = 'vi-constituency'
+    MODEL = VIConstituencyModel
+
+    def train(self, train, dev, test, buckets=32, batch_size=5000,
+              delete={'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''},
+              equal={'ADVP': 'PRT'},
+              verbose=True,
+              **kwargs):
+        r"""
+        Args:
+            train/dev/test (list[list] or str):
+                Filenames of the train/dev/test datasets.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            delete (set[str]):
+                A set of labels that will not be taken into consideration during evaluation.
+                Default: {'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''}.
+            equal (dict[str, str]):
+                The pairs in the dict are considered equivalent during evaluation.
+                Default: {'ADVP': 'PRT'}.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments that can be used to update the configurations for training.
+        """
+
+        return super().train(**Config().update(locals()))
+
+    def evaluate(self, data, buckets=8, batch_size=5000,
+                 delete={'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''},
+                 equal={'ADVP': 'PRT'},
+                 verbose=True,
+                 **kwargs):
+        r"""
+        Args:
+            data (str):
+                The data for evaluation, both list of instances and filename are allowed.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            delete (set[str]):
+                A set of labels that will not be taken into consideration during evaluation.
+                Default: {'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''}.
+            equal (dict[str, str]):
+                The pairs in the dict are considered equivalent during evaluation.
+                Default: {'ADVP': 'PRT'}.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments that can be used to update the configurations for evaluation.
+
+        Returns:
+            The loss scalar and evaluation results.
+        """
+
+        return super().evaluate(**Config().update(locals()))
+
+    def predict(self, data, pred=None, buckets=8, batch_size=5000, prob=False,  verbose=True, **kwargs):
+        r"""
+        Args:
+            data (list[list] or str):
+                The data for prediction, both a list of instances and filename are allowed.
+            pred (str):
+                If specified, the predicted results will be saved to the file. Default: ``None``.
+            buckets (int):
+                The number of buckets that sentences are assigned to. Default: 32.
+            batch_size (int):
+                The number of tokens in each batch. Default: 5000.
+            prob (bool):
+                If ``True``, outputs the probabilities. Default: ``False``.
+            mbr (bool):
+                If ``True``, performs MBR decoding. Default: ``True``.
+            verbose (bool):
+                If ``True``, increases the output verbosity. Default: ``True``.
+            kwargs (dict):
+                A dict holding the unconsumed arguments that can be used to update the configurations for prediction.
+
+        Returns:
+            A :class:`~supar.utils.Dataset` object that stores the predicted results.
+        """
+
+        return super().predict(**Config().update(locals()))
+
+    def _train(self, loader):
+        self.model.train()
+
+        bar = progress_bar(loader)
+
+        for words, *feats, trees, charts in bar:
+            self.optimizer.zero_grad()
+
+            batch_size, seq_len = words.shape
+            lens = words.ne(self.args.pad_index).sum(1) - 1
+            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
+            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
+            s_con, s_bin, s_label = self.model(words, feats)
+            loss, _ = self.model.loss(s_con, s_bin, s_label, charts, mask)
+            loss.backward()
+            nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
+            self.optimizer.step()
+            self.scheduler.step()
+
+            bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f}")
+        logger.info(f"{bar.postfix}")
+
+    @torch.no_grad()
+    def _evaluate(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, SpanMetric()
+
+        for words, *feats, trees, charts in loader:
+            batch_size, seq_len = words.shape
+            lens = words.ne(self.args.pad_index).sum(1) - 1
+            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
+            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
+            s_con, s_bin, s_label = self.model(words, feats)
+            loss, s_con = self.model.loss(s_con, s_bin, s_label, charts, mask)
+            chart_preds = self.model.decode(s_con, s_label, mask)
+            # since the evaluation relies on terminals,
+            # the tree should be first built and then factorized
+            preds = [Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
+                     for tree, chart in zip(trees, chart_preds)]
+            total_loss += loss.item()
+            metric([Tree.factorize(tree, self.args.delete, self.args.equal) for tree in preds],
+                   [Tree.factorize(tree, self.args.delete, self.args.equal) for tree in trees])
+        total_loss /= len(loader)
+
+        return total_loss, metric
+
+    @torch.no_grad()
+    def _predict(self, loader):
+        self.model.eval()
+
+        preds, probs = {'trees': []}, []
+
+        for words, *feats, trees in progress_bar(loader):
+            batch_size, seq_len = words.shape
+            lens = words.ne(self.args.pad_index).sum(1) - 1
+            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
+            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
+            s_con, s_bin, s_label = self.model(words, feats)
+            if self.args.mbr:
+                s_con = self.model.crf(s_con, mask)
+            chart_preds = self.model.decode(s_con, s_label, mask)
+            preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
+                                   for tree, chart in zip(trees, chart_preds)])
+            if self.args.prob:
+                probs.extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
+        if self.args.prob:
+            preds['probs'] = probs
+
+        return preds

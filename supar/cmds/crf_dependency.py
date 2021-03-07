@@ -13,6 +13,7 @@ def main():
     parser.add_argument('--tree', action='store_true', help='whether to ensure well-formedness')
     parser.add_argument('--proj', action='store_true', help='whether to projectivize the data')
     parser.add_argument('--partial', action='store_true', help='whether partial annotation is included')
+    parser.add_argument('--comp', action='store_true', help='whether to complete partial trees')
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
@@ -35,10 +36,10 @@ def main():
     subparser.add_argument('--data', default='data/ptb/test.conllx', help='path to dataset')
     # predict
     subparser = subparsers.add_parser('predict', help='Use a trained parser to make predictions.')
-    subparser.add_argument('--prob', action='store_true', help='whether to output probs')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
     subparser.add_argument('--data', default='data/ptb/test.conllx', help='path to dataset')
     subparser.add_argument('--pred', default='pred.conllx', help='path to predicted result')
+    subparser.add_argument('--prob', action='store_true', help='whether to output probs')
     parse(parser)
 
 

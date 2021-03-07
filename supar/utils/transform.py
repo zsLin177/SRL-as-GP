@@ -184,13 +184,13 @@ class CoNLL(Transform):
         return self.HEAD, self.DEPREL, self.PHEAD, self.PDEPREL
 
     @classmethod
-    def get_arcs(cls, sequence):
-        return [int(i) for i in sequence]
+    def get_arcs(cls, sequence, placeholder='_'):
+        return [-1 if i == placeholder else int(i) for i in sequence]
 
     @classmethod
-    def get_sibs(cls, sequence):
+    def get_sibs(cls, sequence, placeholder='_'):
         sibs = [[0] * (len(sequence) + 1) for _ in range(len(sequence) + 1)]
-        heads = [0] + [int(i) for i in sequence]
+        heads = [0] + [-1 if i == placeholder else int(i) for i in sequence]
 
         for i, hi in enumerate(heads[1:], 1):
             for j, hj in enumerate(heads[i+1:], i + 1):

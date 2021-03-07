@@ -99,7 +99,6 @@ class Parser(object):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
-        self.transform.eval()
         if args.prob:
             self.transform.append(Field('probs'))
 
