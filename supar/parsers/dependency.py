@@ -167,12 +167,12 @@ class BiaffineDependencyParser(Parser):
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_rel = self.model(words, feats)
+            loss = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.partial)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            loss = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.partial)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             if self.args.partial:
                 mask &= arcs.ge(0)
@@ -432,12 +432,12 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_rel = self.model(words, feats)
+            loss, s_arc = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.mbr)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            loss, s_arc = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.mbr)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask)
             # ignore all punctuation if not specified
             if not self.args.punct:
@@ -624,12 +624,12 @@ class CRFDependencyParser(BiaffineDependencyParser):
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_rel = self.model(words, feats)
+            loss, s_arc = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.mbr, self.args.partial)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
-                s_arc.masked_fill_(arc_mask, float('-inf'))
-                s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            loss, s_arc = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.mbr, self.args.partial)
+                s_arc = s_arc.masked_fill_(arc_mask, float('-inf'))
+                s_rel = s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             if self.args.partial:
                 mask &= arcs.ge(0)
@@ -654,13 +654,13 @@ class CRFDependencyParser(BiaffineDependencyParser):
             mask[:, 0] = 0
             lens = mask.sum(1).tolist()
             s_arc, s_rel = self.model(words, feats)
+            if self.args.mbr:
+                s_arc = self.model.crf(s_arc, mask, mbr=True)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            if self.args.mbr:
-                s_arc = self.model.crf(s_arc, mask, mbr=True)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             arcs.extend(arc_preds[mask].split(lens))
             rels.extend(rel_preds[mask].split(lens))
@@ -820,12 +820,12 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_rel = self.model(words, feats)
+            loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, sibs, rels, mask, self.args.mbr, self.args.partial)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, sibs, rels, mask, self.args.mbr, self.args.partial)
             arc_preds, rel_preds = self.model.decode(s_arc, s_sib, s_rel, mask, self.args.tree, self.args.mbr, self.args.proj)
             if self.args.partial:
                 mask &= arcs.ge(0)
@@ -850,13 +850,13 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
             mask[:, 0] = 0
             lens = mask.sum(1).tolist()
             s_arc, s_sib, s_rel = self.model(words, feats)
+            if self.args.mbr:
+                s_arc = self.model.crf((s_arc, s_sib), mask, mbr=True)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            if self.args.mbr:
-                s_arc = self.model.crf((s_arc, s_sib), mask, mbr=True)
             arc_preds, rel_preds = self.model.decode(s_arc, s_sib, s_rel, mask, self.args.tree, self.args.mbr, self.args.proj)
             arcs.extend(arc_preds[mask].split(lens))
             rels.extend(rel_preds[mask].split(lens))
@@ -1097,12 +1097,12 @@ class VIDependencyParser(BiaffineDependencyParser):
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_rel = self.model(words, feats)
+            loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, rels, mask)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, rels, mask)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             if self.args.partial:
                 mask &= arcs.ge(0)
@@ -1127,12 +1127,12 @@ class VIDependencyParser(BiaffineDependencyParser):
             mask[:, 0] = 0
             lens = mask.sum(1).tolist()
             s_arc, s_sib, s_rel = self.model(words, feats)
+            s_arc = self.model.vi((s_arc, s_sib), mask)
             if self.args.comp:
                 arc_mask = arcs.ge(0).unsqueeze(-1) & arcs.unsqueeze(-1).ne(arcs.new_tensor(range(s_arc.shape[-1])))
                 rel_mask = arcs.ge(0).unsqueeze(-1) & rels.unsqueeze(-1).ne(rels.new_tensor(range(s_rel.shape[-1])))
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
-            s_arc = self.model.vi((s_arc, s_sib), mask)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             arcs.extend(arc_preds[mask].split(lens))
             rels.extend(rel_preds[mask].split(lens))
