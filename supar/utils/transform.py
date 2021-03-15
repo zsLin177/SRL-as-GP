@@ -602,13 +602,13 @@ class Tree(Transform):
                 label = equal_labels.get(label, label)
             if len(tree) == 1 and not isinstance(tree[0], nltk.Tree):
                 return (i+1 if label is not None else i), []
-            j, spans = i, []
+            j, cons = i, []
             for child in tree:
                 j, s = track(child, j)
-                spans += s
+                cons += s
             if label is not None and j > i:
-                spans = [(i, j, label)] + spans
-            return j, spans
+                cons = [(i, j, label)] + cons
+            return j, cons
         return track(tree, 0)[1]
 
     @classmethod
@@ -623,7 +623,7 @@ class Tree(Transform):
                 An empty tree that provides a base for building a result tree.
             sequence (list[tuple]):
                 A list of tuples used for generating a tree.
-                Each tuple consits of the indices of left/right span boundaries and label of the span.
+                Each tuple consits of the indices of left/right boundaries and label of the constituent.
 
         Returns:
             A result constituency tree.

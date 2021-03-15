@@ -85,7 +85,7 @@ class BiaffineDependencyParser(Parser):
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -112,7 +112,7 @@ class BiaffineDependencyParser(Parser):
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             tree (bool):
                 If ``True``, ensures to output well-formed trees. Default: ``False``.
             proj (bool):
@@ -452,9 +452,8 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        arcs, rels, probs = [], [], []
-        for words, *feats in progress_bar(loader):
+        preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
+        for words, *feats, arcs, rels in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -466,16 +465,13 @@ class CRFNPDependencyParser(BiaffineDependencyParser):
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask)
-            arcs.extend(arc_preds[mask].split(lens))
-            rels.extend(rel_preds[mask].split(lens))
+            preds['arcs'].extend(arc_preds[mask].split(lens))
+            preds['rels'].extend(rel_preds[mask].split(lens))
             if self.args.prob:
                 arc_probs = s_arc if self.args.mbr else s_arc.softmax(-1)
-                probs.extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
-        arcs = [seq.tolist() for seq in arcs]
-        rels = [self.REL.vocab[seq.tolist()] for seq in rels]
-        preds = {'arcs': arcs, 'rels': rels}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
+        preds['arcs'] = [seq.tolist() for seq in preds['arcs']]
+        preds['rels'] = [self.REL.vocab[seq.tolist()] for seq in preds['rels']]
 
         return preds
 
@@ -540,7 +536,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -567,7 +563,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             mbr (bool):
                 If ``True``, returns marginals for MBR decoding. Default: ``True``.
             tree (bool):
@@ -646,9 +642,8 @@ class CRFDependencyParser(BiaffineDependencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        arcs, rels, probs = [], [], []
-        for words, *feats in progress_bar(loader):
+        preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
+        for words, *feats, arcs, rels in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -662,16 +657,13 @@ class CRFDependencyParser(BiaffineDependencyParser):
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
-            arcs.extend(arc_preds[mask].split(lens))
-            rels.extend(rel_preds[mask].split(lens))
+            preds['arcs'].extend(arc_preds[mask].split(lens))
+            preds['rels'].extend(rel_preds[mask].split(lens))
             if self.args.prob:
                 arc_probs = s_arc if self.args.mbr else s_arc.softmax(-1)
-                probs.extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
-        arcs = [seq.tolist() for seq in arcs]
-        rels = [self.REL.vocab[seq.tolist()] for seq in rels]
-        preds = {'arcs': arcs, 'rels': rels}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
+        preds['arcs'] = [seq.tolist() for seq in preds['arcs']]
+        preds['rels'] = [self.REL.vocab[seq.tolist()] for seq in preds['rels']]
 
         return preds
 
@@ -736,7 +728,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -763,7 +755,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             mbr (bool):
                 If ``True``, returns marginals for MBR decoding. Default: ``True``.
             tree (bool):
@@ -842,9 +834,8 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        arcs, rels, probs = [], [], []
-        for words, *feats in progress_bar(loader):
+        preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
+        for words, *feats, arcs, rels in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -858,16 +849,13 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
             arc_preds, rel_preds = self.model.decode(s_arc, s_sib, s_rel, mask, self.args.tree, self.args.mbr, self.args.proj)
-            arcs.extend(arc_preds[mask].split(lens))
-            rels.extend(rel_preds[mask].split(lens))
+            preds['arcs'].extend(arc_preds[mask].split(lens))
+            preds['rels'].extend(rel_preds[mask].split(lens))
             if self.args.prob:
                 arc_probs = s_arc if self.args.mbr else s_arc.softmax(-1)
-                probs.extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
-        arcs = [seq.tolist() for seq in arcs]
-        rels = [self.REL.vocab[seq.tolist()] for seq in rels]
-        preds = {'arcs': arcs, 'rels': rels}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, arc_probs.unbind())])
+        preds['arcs'] = [seq.tolist() for seq in preds['arcs']]
+        preds['rels'] = [self.REL.vocab[seq.tolist()] for seq in preds['rels']]
 
         return preds
 
@@ -1015,7 +1003,7 @@ class VIDependencyParser(BiaffineDependencyParser):
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -1042,7 +1030,7 @@ class VIDependencyParser(BiaffineDependencyParser):
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
             comp (bool):
-                If ``True``, complete partial trees. Default: ``False``.
+                If ``True``, complete partial data. Default: ``False``.
             tree (bool):
                 If ``True``, ensures to output well-formed trees. Default: ``False``.
             proj (bool):
@@ -1119,9 +1107,8 @@ class VIDependencyParser(BiaffineDependencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        arcs, rels, probs = [], [], []
-        for words, *feats in progress_bar(loader):
+        preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
+        for words, *feats, arcs, rels in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             # ignore the first token of each sentence
             mask[:, 0] = 0
@@ -1134,14 +1121,11 @@ class VIDependencyParser(BiaffineDependencyParser):
                 s_arc.masked_fill_(arc_mask, float('-inf'))
                 s_rel.masked_fill_(rel_mask.unsqueeze(2), float('-inf'))
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
-            arcs.extend(arc_preds[mask].split(lens))
-            rels.extend(rel_preds[mask].split(lens))
+            preds['arcs'].extend(arc_preds[mask].split(lens))
+            preds['rels'].extend(rel_preds[mask].split(lens))
             if self.args.prob:
-                probs.extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, s_arc.unbind())])
-        arcs = [seq.tolist() for seq in arcs]
-        rels = [self.REL.vocab[seq.tolist()] for seq in rels]
-        preds = {'arcs': arcs, 'rels': rels}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i+1, :i+1].cpu() for i, prob in zip(lens, s_arc.unbind())])
+        preds['arcs'] = [seq.tolist() for seq in preds['arcs']]
+        preds['rels'] = [self.REL.vocab[seq.tolist()] for seq in preds['rels']]
 
         return preds

@@ -380,20 +380,20 @@ class CRFConstituency(nn.Module):
         s = torch.full_like(scores, float('-inf'))
 
         for w in range(1, seq_len):
-            # n denotes the number of spans to iterate,
-            # from span (0, w) to span (n, n+w) given width w
+            # n denotes the number of constituents to iterate,
+            # from constituent (0, w) to constituent (n, n+w) given width w
             n = seq_len - w
 
             if w == 1:
                 s.diagonal(w).copy_(scores.diagonal(w))
                 continue
             # [n, w, batch_size]
-            s_s = stripe(s, n, w-1, (0, 1)) + stripe(s, n, w-1, (1, w), 0)
+            s_c = stripe(s, n, w-1, (0, 1)) + stripe(s, n, w-1, (1, w), 0)
             # [batch_size, n, w]
-            s_s = s_s.permute(2, 0, 1)
-            if s_s.requires_grad:
-                s_s.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
-            s_s = s_s.logsumexp(-1)
-            s.diagonal(w).copy_(s_s + scores.diagonal(w))
+            s_c = s_c.permute(2, 0, 1)
+            if s_c.requires_grad:
+                s_c.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
+            s_c = s_c.logsumexp(-1)
+            s.diagonal(w).copy_(s_c + scores.diagonal(w))
 
         return s[0].gather(0, lens.unsqueeze(0)).sum()

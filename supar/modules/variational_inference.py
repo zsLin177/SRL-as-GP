@@ -132,12 +132,12 @@ class MFVIConstituency(nn.Module):
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (l->r)
-        q = s_con.new_zeros(seq_len, seq_len, batch_size)
+        q = s_con
 
         for _ in range(self.max_iter):
             q = q.sigmoid()
-            # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik), k != i,j
-            q = s_con + (q.unsqueeze(1) * s_bin).sum(2)
+            # q(ij) = s(ij) + sum(q(jk)*s^bin(ij,jk), k != i,j
+            q = s_con + (q.unsqueeze(0) * s_bin).sum(2)
 
         return q.permute(2, 0, 1).sigmoid()
 

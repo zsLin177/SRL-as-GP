@@ -174,8 +174,7 @@ class CRFConstituencyParser(Parser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds, probs = {'trees': []}, []
-
+        preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
             batch_size, seq_len = words.shape
             lens = words.ne(self.args.pad_index).sum(1) - 1
@@ -188,9 +187,7 @@ class CRFConstituencyParser(Parser):
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                probs.extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
 
         return preds
 
@@ -425,22 +422,18 @@ class VIConstituencyParser(CRFConstituencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds, probs = {'trees': []}, []
-
+        preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
             batch_size, seq_len = words.shape
             lens = words.ne(self.args.pad_index).sum(1) - 1
             mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
             mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
             s_con, s_bin, s_label = self.model(words, feats)
-            if self.args.mbr:
-                s_con = self.model.crf(s_con, mask)
+            s_con = self.model.vi((s_con, s_bin), mask)
             chart_preds = self.model.decode(s_con, s_label, mask)
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                probs.extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
 
         return preds

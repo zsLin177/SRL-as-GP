@@ -13,7 +13,7 @@ def main():
     parser.add_argument('--tree', action='store_true', help='whether to ensure well-formedness')
     parser.add_argument('--proj', action='store_true', help='whether to projectivize the data')
     parser.add_argument('--partial', action='store_true', help='whether partial annotation is included')
-    parser.add_argument('--comp', action='store_true', help='whether to complete partial trees')
+    parser.add_argument('--comp', action='store_true', help='whether to complete partial data')
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')

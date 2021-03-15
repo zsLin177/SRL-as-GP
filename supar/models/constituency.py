@@ -93,7 +93,7 @@ class CRFConstituencyModel(nn.Module):
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
                  lstm_dropout=.33,
-                 n_mlp_span=500,
+                 n_mlp_con=500,
                  n_mlp_label=100,
                  mlp_dropout=.33,
                  pad_index=0,
@@ -133,12 +133,12 @@ class CRFConstituencyModel(nn.Module):
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        self.mlp_con_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
-        self.mlp_con_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
+        self.mlp_con_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_con, dropout=mlp_dropout)
+        self.mlp_con_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_con, dropout=mlp_dropout)
         self.mlp_label_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
         self.mlp_label_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
 
-        self.con_attn = Biaffine(n_in=n_mlp_span, bias_x=True, bias_y=False)
+        self.con_attn = Biaffine(n_in=n_mlp_con, bias_x=True, bias_y=False)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.crf = CRFConstituency()
         self.criterion = nn.CrossEntropyLoss()
@@ -163,9 +163,9 @@ class CRFConstituencyModel(nn.Module):
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
-                The first tensor of shape ``[batch_size, seq_len, seq_len]`` holds scores of all possible spans.
+                The first tensor of shape ``[batch_size, seq_len, seq_len]`` holds scores of all possible constituents.
                 The second of shape ``[batch_size, seq_len, seq_len, n_labels]`` holds
-                scores of all possible labels on each span.
+                scores of all possible labels on each constituent.
         """
 
         batch_size, seq_len = words.shape
@@ -217,9 +217,9 @@ class CRFConstituencyModel(nn.Module):
         r"""
         Args:
             s_con (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
-                Scores of all spans
+                Scores of all constituents.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all labels on each span.
+                Scores of all labels on each constituent.
             charts (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard labels, in which positions without labels are filled with -1.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
@@ -229,24 +229,24 @@ class CRFConstituencyModel(nn.Module):
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
-                The training loss and
-                original span scores of shape ``[batch_size, seq_len, seq_len]`` if ``mbr=False``, or marginals otherwise.
+                The training loss and original constituent scores
+                of shape ``[batch_size, seq_len, seq_len]`` if ``mbr=False``, or marginals otherwise.
         """
 
-        span_mask = charts.ge(0) & mask
-        con_loss, span_probs = self.crf(s_con, mask, span_mask, mbr)
-        label_loss = self.criterion(s_label[span_mask], charts[span_mask])
+        con_mask = charts.ge(0) & mask
+        con_loss, con_probs = self.crf(s_con, mask, con_mask, mbr)
+        label_loss = self.criterion(s_label[con_mask], charts[con_mask])
         loss = con_loss + label_loss
 
-        return loss, span_probs
+        return loss, con_probs
 
     def decode(self, s_con, s_label, mask):
         r"""
         Args:
             s_con (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
-                Scores of all spans.
+                Scores of all constituents.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all labels on each span.
+                Scores of all labels on each constituent.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask for covering the unpadded tokens in each chart.
 
@@ -255,9 +255,9 @@ class CRFConstituencyModel(nn.Module):
                 Sequences of factorized labeled trees traversed in pre-order.
         """
 
-        span_preds = cky(s_con.unsqueeze(-1), mask)
+        con_preds = cky(s_con.unsqueeze(-1), mask)
         label_preds = s_label.argmax(-1).tolist()
-        return [[(i, j, labels[i][j]) for i, j, _ in spans] for spans, labels in zip(span_preds, label_preds)]
+        return [[(i, j, labels[i][j]) for i, j, _ in cons] for cons, labels in zip(con_preds, label_preds)]
 
 
 class VIConstituencyModel(nn.Module):
@@ -344,7 +344,7 @@ class VIConstituencyModel(nn.Module):
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
                  lstm_dropout=.33,
-                 n_mlp_span=500,
+                 n_mlp_con=500,
                  n_mlp_label=100,
                  mlp_dropout=.33,
                  max_iter=3,
@@ -386,15 +386,15 @@ class VIConstituencyModel(nn.Module):
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        self.mlp_con_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
-        self.mlp_con_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_span, dropout=mlp_dropout)
+        self.mlp_con_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_con, dropout=mlp_dropout)
+        self.mlp_con_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_con, dropout=mlp_dropout)
         self.mlp_bin_l = MLP(n_in=n_lstm_hidden*2, n_out=100, dropout=mlp_dropout)
         self.mlp_bin_r = MLP(n_in=n_lstm_hidden*2, n_out=100, dropout=mlp_dropout)
         self.mlp_bin_b = MLP(n_in=n_lstm_hidden*2, n_out=100, dropout=mlp_dropout)
         self.mlp_label_l = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
         self.mlp_label_r = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=mlp_dropout)
 
-        self.con_attn = Biaffine(n_in=n_mlp_span, bias_x=True, bias_y=False)
+        self.con_attn = Biaffine(n_in=n_mlp_con, bias_x=True, bias_y=False)
         self.bin_attn = Triaffine(n_in=100, bias_x=True, bias_y=False)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.vi = MFVIConstituency(max_iter)
@@ -421,9 +421,9 @@ class VIConstituencyModel(nn.Module):
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
-                The first tensor of shape ``[batch_size, seq_len, seq_len]`` holds scores of all possible spans.
+                The first tensor of shape ``[batch_size, seq_len, seq_len]`` holds scores of all possible constituents.
                 The second of shape ``[batch_size, seq_len, seq_len, n_labels]`` holds
-                scores of all possible labels on each span.
+                scores of all possible labels on each constituent.
         """
 
         batch_size, seq_len = words.shape
@@ -479,9 +479,9 @@ class VIConstituencyModel(nn.Module):
         r"""
         Args:
             s_con (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
-                Scores of all spans
+                Scores of all constituents.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all labels on each span.
+                Scores of all labels on each constituent.
             charts (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard labels, in which positions without labels are filled with -1.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
@@ -493,20 +493,20 @@ class VIConstituencyModel(nn.Module):
                 marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        span_mask = charts.ge(0) & mask
-        con_loss, span_probs = self.vi((s_con, s_bin), mask, span_mask)
-        label_loss = self.criterion(s_label[span_mask], charts[span_mask])
+        con_mask = charts.ge(0) & mask
+        con_loss, con_probs = self.vi((s_con, s_bin), mask, con_mask)
+        label_loss = self.criterion(s_label[con_mask], charts[con_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * con_loss
 
-        return loss, span_probs
+        return loss, con_probs
 
     def decode(self, s_con, s_label, mask):
         r"""
         Args:
             s_con (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
-                Scores of all spans.
+                Scores of all constituents.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all labels on each span.
+                Scores of all labels on each constituent.
             mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask for covering the unpadded tokens in each chart.
 
@@ -515,6 +515,6 @@ class VIConstituencyModel(nn.Module):
                 Sequences of factorized labeled trees traversed in pre-order.
         """
 
-        span_preds = cky(s_con.unsqueeze(-1), mask)
+        con_preds = cky(s_con.unsqueeze(-1), mask)
         label_preds = s_label.argmax(-1).tolist()
-        return [[(i, j, labels[i][j]) for i, j, _ in spans] for spans, labels in zip(span_preds, label_preds)]
+        return [[(i, j, labels[i][j]) for i, j, _ in cons] for cons, labels in zip(con_preds, label_preds)]

@@ -145,8 +145,7 @@ class BiaffineSemanticDependencyParser(Parser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        charts, probs = [], []
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
         for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
@@ -155,14 +154,11 @@ class BiaffineSemanticDependencyParser(Parser):
             s_edge, s_label = self.model(words, feats)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
-            charts.extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
-                probs.extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
-        charts = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
-                  for chart in charts]
-        preds = {'labels': charts}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
+        preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
+                           for chart in preds['labels']]
 
         return preds
 
@@ -387,8 +383,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
     def _predict(self, loader):
         self.model.eval()
 
-        preds = {}
-        charts, probs = [], []
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
         for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
@@ -398,14 +393,11 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             s_edge = self.model.lbp((s_edge, s_sib, s_cop, s_grd), mask)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
-            charts.extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
-                probs.extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
-        charts = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
-                  for chart in charts]
-        preds = {'labels': charts}
-        if self.args.prob:
-            preds['probs'] = probs
+                preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
+        preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
+                           for chart in preds['labels']]
 
         return preds
 

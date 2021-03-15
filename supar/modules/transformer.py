@@ -37,7 +37,7 @@ class TransformerEmbedding(nn.Module):
         https://github.com/huggingface/transformers
     """
 
-    def __init__(self, model, n_layers, n_out, stride=5, pad_index=0, dropout=0, requires_grad=False):
+    def __init__(self, model, n_layers, n_out, stride=10, pad_index=0, dropout=0, requires_grad=False):
         super().__init__()
 
         from transformers import AutoConfig, AutoModel
@@ -52,7 +52,7 @@ class TransformerEmbedding(nn.Module):
         self.pad_index = pad_index
         self.dropout = dropout
         self.requires_grad = requires_grad
-        self.max_len = self.bert.config.max_position_embeddings
+        self.max_len = max(0, self.bert.config.max_position_embeddings) or 1e12
 
         self.scalar_mix = ScalarMix(self.n_layers, dropout)
         self.projection = nn.Linear(self.hidden_size, self.n_out, False) if self.hidden_size != n_out else nn.Identity()
