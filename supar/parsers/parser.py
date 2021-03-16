@@ -3,6 +3,7 @@
 import os
 from datetime import datetime, timedelta
 
+import dill
 import supar
 import torch
 import torch.distributed as dist
@@ -59,7 +60,7 @@ class Parser(object):
             logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
 
             t = datetime.now() - start
-            if dev_metric > best_metric and epoch >= args.patience:
+            if dev_metric > best_metric:
                 best_e, best_metric = epoch, dev_metric
                 if is_master():
                     self.save(args.path)
@@ -95,7 +96,7 @@ class Parser(object):
 
         return loss, metric
 
-    def predict(self, data, pred=None, buckets=8, batch_size=5000, prob=False, **kwargs):
+    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
@@ -103,7 +104,7 @@ class Parser(object):
             self.transform.append(Field('probs'))
 
         logger.info("Loading the data")
-        dataset = Dataset(self.transform, data)
+        dataset = Dataset(self.transform, data, lang=lang)
         dataset.build(args.batch_size, args.buckets)
         logger.info(f"\n{dataset}")
 
@@ -183,4 +184,4 @@ class Parser(object):
                  'state_dict': state_dict,
                  'pretrained': pretrained,
                  'transform': self.transform}
-        torch.save(state, path)
+        torch.save(state, path, pickle_module=dill)

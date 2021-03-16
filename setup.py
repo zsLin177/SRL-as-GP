@@ -22,7 +22,12 @@ setup(
     setup_requires=[
         'setuptools>=18.0',
     ],
-    install_requires=['torch>=1.4.0', 'transformers>=3.1.0', 'nltk'],
+    install_requires=[
+        'torch>=1.7.1',
+        'transformers>=3.1.0',
+        'nltk',
+        'stanza',
+        'dill'],
     entry_points={
         'console_scripts': [
             'biaffine-dependency=supar.cmds.biaffine_dependency:main',
