@@ -800,14 +800,12 @@ class VIDependencyModel(nn.Module):
             The dropout ratio of LSTM. Default: .33.
         n_mlp_arc (int):
             Arc MLP size. Default: 500.
-        n_mlp_bin (int):
+        n_mlp_sib (int):
             Binary factor MLP size. Default: 100.
         n_mlp_rel  (int):
             Label MLP size. Default: 100.
         mlp_dropout (float):
             The dropout ratio of MLP layers. Default: .33.
-        inference (str):
-            Approximate inference methods. Default: 'mfvi'.
         max_iter (int):
             Max iteration times for Variational Inference. Default: 3.
         interpolation (int):
@@ -840,10 +838,9 @@ class VIDependencyModel(nn.Module):
                  n_lstm_layers=3,
                  lstm_dropout=.33,
                  n_mlp_arc=500,
-                 n_mlp_bin=100,
+                 n_mlp_sib=100,
                  n_mlp_rel=100,
                  mlp_dropout=.33,
-                 inference='mfvi',
                  max_iter=3,
                  pad_index=0,
                  unk_index=1,
@@ -884,17 +881,16 @@ class VIDependencyModel(nn.Module):
 
         self.mlp_arc_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
         self.mlp_arc_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_arc, dropout=mlp_dropout)
-        self.mlp_sib_s = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_sib_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
-        self.mlp_sib_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=mlp_dropout)
+        self.mlp_sib_s = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_sib, dropout=mlp_dropout)
+        self.mlp_sib_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_sib, dropout=mlp_dropout)
+        self.mlp_sib_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_sib, dropout=mlp_dropout)
         self.mlp_rel_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
         self.mlp_rel_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_rel, dropout=mlp_dropout)
 
         self.arc_attn = Biaffine(n_in=n_mlp_arc, bias_x=True, bias_y=False)
-        self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
-        self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
+        self.sib_attn = Triaffine(n_in=n_mlp_sib, bias_x=True, bias_y=True)
         self.rel_attn = Biaffine(n_in=n_mlp_rel, n_out=n_rels, bias_x=True, bias_y=True)
-        self.vi = MFVIDependency(max_iter)
+        self.inference = MFVIDependency(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.pad_index = pad_index
         self.unk_index = unk_index
@@ -994,7 +990,7 @@ class VIDependencyModel(nn.Module):
                 The training loss.
         """
 
-        arc_loss, marginals = self.vi((s_arc, s_sib), mask, arcs)
+        arc_loss, marginals = self.inference((s_arc, s_sib), mask, arcs)
         s_rel, rels = s_rel[mask], rels[mask]
         s_rel = s_rel[torch.arange(len(rels)), arcs[mask]]
         rel_loss = self.criterion(s_rel, rels)

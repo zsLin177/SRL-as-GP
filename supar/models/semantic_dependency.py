@@ -326,13 +326,13 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
             The number of LSTM layers. Default: 3.
         lstm_dropout (float):
             The dropout ratio of LSTM. Default: .33.
-        n_mlp_un (int):
+        n_mlp_edge (int):
             Unary factor MLP size. Default: 600.
         n_mlp_bin (int):
             Binary factor MLP size. Default: 150.
         n_mlp_label  (int):
             Label MLP size. Default: 600.
-        un_mlp_dropout (float):
+        edge_mlp_dropout (float):
             The dropout ratio of unary factor MLP layers. Default: .25.
         bin_mlp_dropout (float):
             The dropout ratio of binary factor MLP layers. Default: .25.
@@ -374,10 +374,10 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
                  lstm_dropout=.33,
-                 n_mlp_un=600,
+                 n_mlp_edge=600,
                  n_mlp_bin=150,
                  n_mlp_label=600,
-                 un_mlp_dropout=.25,
+                 edge_mlp_dropout=.25,
                  bin_mlp_dropout=.25,
                  label_mlp_dropout=.33,
                  inference='mfvi',
@@ -424,20 +424,20 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        self.mlp_un_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_un, dropout=un_mlp_dropout, activation=False)
-        self.mlp_un_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_un, dropout=un_mlp_dropout, activation=False)
+        self.mlp_un_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_un_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
         self.mlp_bin_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
         self.mlp_bin_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
         self.mlp_bin_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
         self.mlp_label_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
         self.mlp_label_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
 
-        self.edge_attn = Biaffine(n_in=n_mlp_un, bias_x=True, bias_y=True)
+        self.edge_attn = Biaffine(n_in=n_mlp_edge, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
-        self.vi = (MFVISemanticDependency if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
+        self.inference = (MFVISemanticDependency if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -548,7 +548,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         """
 
         edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.vi((s_egde, s_sib, s_cop, s_grd), mask, edges)
+        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd), mask, edges)
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
         return loss, marginals

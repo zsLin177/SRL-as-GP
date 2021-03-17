@@ -397,7 +397,7 @@ class VIConstituencyModel(nn.Module):
         self.con_attn = Biaffine(n_in=n_mlp_con, bias_x=True, bias_y=False)
         self.bin_attn = Triaffine(n_in=100, bias_x=True, bias_y=False)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
-        self.vi = MFVIConstituency(max_iter)
+        self.inference = MFVIConstituency(max_iter)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -494,7 +494,7 @@ class VIConstituencyModel(nn.Module):
         """
 
         con_mask = charts.ge(0) & mask
-        con_loss, con_probs = self.vi((s_con, s_bin), mask, con_mask)
+        con_loss, con_probs = self.inference((s_con, s_bin), mask, con_mask)
         label_loss = self.criterion(s_label[con_mask], charts[con_mask])
         loss = self.interpolation * label_loss + (1 - self.interpolation) * con_loss
 

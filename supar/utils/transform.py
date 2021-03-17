@@ -334,7 +334,7 @@ class CoNLL(Transform):
             return False
         return next(tarjan(sequence), None) is None
 
-    def load(self, data, lang='en', proj=False, max_len=None, **kwargs):
+    def load(self, data, lang=None, proj=False, max_len=None, **kwargs):
         r"""
         Loads the data in CoNLL-X format.
         Also supports for loading data from CoNLL-U file with comments and non-integer IDs.
@@ -345,7 +345,7 @@ class CoNLL(Transform):
             lang (str):
                 Language code (e.g., 'en') or language name (e.g., 'English') for the text to tokenize.
                 ``None`` if tokenization is not required.
-                Default: ``en``.
+                Default: None.
             proj (bool):
                 If ``True``, discards all non-projective sentences. Default: ``False``.
             max_len (int):
@@ -669,7 +669,7 @@ class Tree(Transform):
             return [tree]
         return nltk.Tree(root, track(iter(sequence)))
 
-    def load(self, data, lang='en', max_len=None, **kwargs):
+    def load(self, data, lang=None, max_len=None, **kwargs):
         r"""
         Args:
             data (list[list] or str):
@@ -677,7 +677,7 @@ class Tree(Transform):
             lang (str):
                 Language code (e.g., 'en') or language name (e.g., 'English') for the text to tokenize.
                 ``None`` if tokenization is not required.
-                Default: ``en``.
+                Default: None.
             max_len (int):
                 Sentences exceeding the length will be discarded. Default: ``None``.
 
