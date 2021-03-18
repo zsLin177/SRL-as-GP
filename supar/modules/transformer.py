@@ -52,7 +52,7 @@ class TransformerEmbedding(nn.Module):
         self.pad_index = pad_index
         self.dropout = dropout
         self.requires_grad = requires_grad
-        self.max_len = max(0, self.bert.config.max_position_embeddings) or 1e12
+        self.max_len = int(max(0, self.bert.config.max_position_embeddings) or 1e12)
 
         self.scalar_mix = ScalarMix(self.n_layers, dropout)
         self.projection = nn.Linear(self.hidden_size, self.n_out, False) if self.hidden_size != n_out else nn.Identity()

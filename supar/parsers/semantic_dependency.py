@@ -221,7 +221,7 @@ class BiaffineSemanticDependencyParser(Parser):
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
@@ -465,7 +465,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)

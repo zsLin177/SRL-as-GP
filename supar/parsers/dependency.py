@@ -267,7 +267,7 @@ class BiaffineDependencyParser(Parser):
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
             BERT.vocab = tokenizer.get_vocab()
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         REL = Field('rels', bos=bos)
@@ -928,7 +928,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
             BERT.vocab = tokenizer.get_vocab()
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         SIB = ChartField('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)

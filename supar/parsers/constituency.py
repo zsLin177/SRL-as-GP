@@ -248,7 +248,7 @@ class CRFConstituencyParser(Parser):
                                 eos=tokenizer.sep_token or tokenizer.sep_token,
                                 fix_len=args.fix_len,
                                 tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
             BERT.vocab = tokenizer.get_vocab()
         TREE = RawField('trees')
         CHART = ChartField('charts')
