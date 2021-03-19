@@ -17,7 +17,7 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser']
 
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              CRFNPDependencyParser,
@@ -30,9 +30,13 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              VISemanticDependencyParser]}
 
 MODEL = {
-    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.zip'
+    'biaffine-dep-bert-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.bert.zip',
+    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.zip',
+    'vi-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.zip'
 }
 
 CONFIG = {
-    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.ini'
+    'biaffine-dep-bert-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.bert.ini',
+    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.ini',
+    'vi-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.ini'
 }

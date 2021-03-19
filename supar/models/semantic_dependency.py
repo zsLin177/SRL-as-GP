@@ -265,7 +265,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
                 Scores of all possible labels on each edge.
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
+            ~torch.BoolTensor, ~torch.LongTensor:
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
@@ -333,7 +333,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         n_mlp_label  (int):
             Label MLP size. Default: 600.
         edge_mlp_dropout (float):
-            The dropout ratio of unary factor MLP layers. Default: .25.
+            The dropout ratio of unary edge factor MLP layers. Default: .25.
         bin_mlp_dropout (float):
             The dropout ratio of binary factor MLP layers. Default: .25.
         label_mlp_dropout (float):
@@ -424,8 +424,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                                     dropout=lstm_dropout)
         self.lstm_dropout = SharedDropout(p=lstm_dropout)
 
-        self.mlp_un_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_un_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_edge_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_edge_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
         self.mlp_bin_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
         self.mlp_bin_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
         self.mlp_bin_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
@@ -498,8 +498,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         x = self.lstm_dropout(x)
 
         # apply MLPs to the BiLSTM output states
-        un_d = self.mlp_un_d(x)
-        un_h = self.mlp_un_h(x)
+        edge_d = self.mlp_edge_d(x)
+        edge_h = self.mlp_edge_h(x)
         bin_d = self.mlp_bin_d(x)
         bin_h = self.mlp_bin_h(x)
         bin_g = self.mlp_bin_g(x)
@@ -508,7 +508,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         label_h = self.mlp_label_h(x)
 
         # [batch_size, seq_len, seq_len]
-        s_egde = self.edge_attn(un_d, un_h)
+        s_egde = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len]
         s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
         s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
@@ -562,8 +562,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 Scores of all possible labels on each edge.
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
+            ~torch.BoolTensor, ~torch.LongTensor:
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_egde.argmax(-1), s_label.argmax(-1)
+        return s_egde.gt(0.5), s_label.argmax(-1)

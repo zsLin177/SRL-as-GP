@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='supar',
-    version='1.0.0',
+    version='1.1.0',
     author='Yu Zhang',
     author_email='yzhang.cs@outlook.com',
     description='Syntactic Parsing Models',
@@ -24,7 +24,7 @@ setup(
     ],
     install_requires=[
         'torch>=1.7.1',
-        'transformers>=3.1.0',
+        'transformers>=4.0.0',
         'nltk',
         'stanza',
         'dill'],

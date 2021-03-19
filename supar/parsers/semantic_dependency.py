@@ -119,7 +119,7 @@ class BiaffineSemanticDependencyParser(Parser):
             self.scheduler.step()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
         logger.info(f"{bar.postfix}")
@@ -139,7 +139,7 @@ class BiaffineSemanticDependencyParser(Parser):
             total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
         total_loss /= len(loader)
 
@@ -157,7 +157,7 @@ class BiaffineSemanticDependencyParser(Parser):
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
+            chart_preds = label_preds.masked_fill(~(edge_preds & mask), -1)
             preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
                 preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
@@ -362,7 +362,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             self.scheduler.step()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
         logger.info(f"{bar.postfix}")
@@ -382,7 +382,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
         total_loss /= len(loader)
 
@@ -401,7 +401,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             s_edge = self.model.lbp((s_edge, s_sib, s_cop, s_grd), mask)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
+            chart_preds = label_preds.masked_fill(~(edge_preds & mask), -1)
             preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
                 preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])

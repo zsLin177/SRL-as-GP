@@ -107,7 +107,6 @@ class MFVIConstituency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        batch_size, seq_len, _ = mask.shape
         marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
@@ -174,16 +173,16 @@ class LBPSemanticDependency(nn.Module):
         Returns:
             ~torch.Tensor, ~torch.Tensor:
                 The first is the training loss averaged by the number of tokens, which won't be returned if ``target=None``.
-                The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len, 2]``.
+                The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
         marginals = self.lbp(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
-            return torch.stack((1 - marginals, marginals), -1)
+            return marginals
         loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
 
-        return loss, torch.stack((1 - marginals, marginals), -1)
+        return loss, marginals
 
     def lbp(self, s_edge, s_sib, s_cop, s_grd, mask):
         batch_size, seq_len, _ = mask.shape
@@ -206,7 +205,7 @@ class LBPSemanticDependency(nn.Module):
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        q = s_edge.new_zeros(2, seq_len, seq_len, batch_size)
+        q = torch.stack((torch.zeros_like(s_edge), s_edge))
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
         m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
@@ -267,16 +266,16 @@ class MFVISemanticDependency(nn.Module):
         Returns:
             ~torch.Tensor, ~torch.Tensor:
                 The first is the training loss averaged by the number of tokens, which won't be returned if ``target=None``.
-                The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len, 2]``.
+                The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
         marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
 
         if target is None:
-            return torch.stack((1 - marginals, marginals), -1)
+            return marginals
         loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
 
-        return loss, torch.stack((1 - marginals, marginals), -1)
+        return loss, marginals
 
     def mfvi(self, s_edge, s_sib, s_cop, s_grd, mask):
         batch_size, seq_len, _ = mask.shape
@@ -298,7 +297,7 @@ class MFVISemanticDependency(nn.Module):
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (h->m)
-        q = s_edge.new_zeros(seq_len, seq_len, batch_size)
+        q = s_edge
 
         for _ in range(self.max_iter):
             q = q.sigmoid()

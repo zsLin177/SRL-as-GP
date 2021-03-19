@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-import nltk
 import supar
 from supar import Parser
 
@@ -9,12 +8,14 @@ def test_parse():
     sentence = ['The', 'dog', 'chases', 'the', 'cat', '.']
     for name in supar.MODEL:
         parser = Parser.load(name)
-        parser.predict([sentence], prob=True)
+        parser.predict(sentence, prob=True)
+        parser.predict(' '.join(sentence), prob=True, lang='en')
 
 
 def test_bert():
-    nltk.download('punkt')
-    sentence = nltk.word_tokenize('''
+    parser = Parser.load('biaffine-dep-bert-en')
+    parser.predict(
+        '''
         No, it wasn't Black Monday.
         But while the New York Stock Exchange didn't fall apart Friday as the Dow Jones Industrial Average
         plunged 190.58 points - most of it in the final hour - it barely managed to stay this side of chaos.
@@ -43,6 +44,6 @@ def test_bert():
         At the end of the day, 251.2 million shares were traded.
         The Dow Jones industrials closed at 2569.26.
         The Dow's decline was second in point terms only to the 508-point Black Monday crash that occurred Oct. 19, 1987.
-        ''')
-    parser = Parser.load('biaffine-dep-bert-en')
-    parser.predict([sentence], prob=True)
+        ''',
+        lang='en',
+        prob=True)

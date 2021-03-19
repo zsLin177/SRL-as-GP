@@ -258,7 +258,7 @@ class BiaffineDependencyModel(nn.Module):
                 If ``True``, ensures to output projective trees. Default: ``False``.
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
+            ~torch.LongTensor, ~torch.LongTensor:
                 Predicted arcs and labels of shape ``[batch_size, seq_len]``.
         """
 
@@ -733,7 +733,7 @@ class CRF2oDependencyModel(nn.Module):
                 If ``True``, ensures to output projective trees. Default: ``False``.
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
+            ~torch.LongTensor, ~torch.LongTensor:
                 Predicted arcs and labels of shape ``[batch_size, seq_len]``.
         """
 
@@ -1012,7 +1012,7 @@ class VIDependencyModel(nn.Module):
                 If ``True``, ensures to output projective trees. Default: ``False``.
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
+            ~torch.LongTensor, ~torch.LongTensor:
                 Predicted arcs and labels of shape ``[batch_size, seq_len]``.
         """
 
