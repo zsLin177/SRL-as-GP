@@ -205,7 +205,7 @@ class LBPSemanticDependency(nn.Module):
 
         # log beliefs
         # [2, seq_len, seq_len, batch_size], (h->m)
-        q = torch.stack((torch.zeros_like(s_edge), s_edge))
+        q = s_edge
         # log messages of siblings
         # [2, seq_len, seq_len, seq_len, batch_size], (h->m->s)
         m_sib = s_sib.new_zeros(2, seq_len, seq_len, seq_len, batch_size)
