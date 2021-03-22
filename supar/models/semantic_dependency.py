@@ -509,13 +509,13 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
 
         # [batch_size, seq_len, seq_len]
         s_egde = self.edge_attn(edge_d, edge_h)
-        # [batch_size, seq_len, seq_len, seq_len]
-        s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
-        s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
-        # [batch_size, seq_len, seq_len, seq_len]
-        s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2).triu_()
-        s_cop = s_cop + s_cop.transpose(-1, -2)
-        # [batch_size, seq_len, seq_len, seq_len]
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
+        s_sib = self.sib_attn(bin_d, bin_d, bin_h)
+        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(0, 3, 1, 2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
+        s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->g)
         s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
