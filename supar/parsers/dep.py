@@ -7,7 +7,7 @@ import torch.nn as nn
 from supar.models import (BiaffineDependencyModel, CRF2oDependencyModel,
                           CRFDependencyModel, CRFNPDependencyModel,
                           VIDependencyModel)
-from supar.parsers.parser import Parser
+from supar.parsers import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField

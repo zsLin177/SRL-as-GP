@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from supar.models import (BiaffineSemanticDependencyModel,
                           VISemanticDependencyModel)
-from supar.parsers.parser import Parser
+from supar.parsers import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField
@@ -213,7 +213,8 @@ class BiaffineSemanticDependencyParser(Parser):
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
-            from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast
+            from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                      GPT2TokenizerFast)
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
             BERT = SubwordField('bert',
                                 pad=tokenizer.pad_token,
@@ -457,7 +458,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
-            from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast
+            from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                      GPT2TokenizerFast)
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
             BERT = SubwordField('bert',
                                 pad=tokenizer.pad_token,
