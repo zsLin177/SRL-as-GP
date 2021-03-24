@@ -154,7 +154,7 @@ class Parser(object):
         Examples:
             >>> from supar import Parser
             >>> parser = Parser.load('biaffine-dep-en')
-            >>> parser = Parser.load('./ptb.biaffine.dependency.char')
+            >>> parser = Parser.load('./ptb.biaffine.dep.char')
         """
 
         args = Config(**locals())

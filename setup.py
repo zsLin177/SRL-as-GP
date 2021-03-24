@@ -30,11 +30,13 @@ setup(
         'dill'],
     entry_points={
         'console_scripts': [
-            'biaffine-dependency=supar.cmds.biaffine_dependency:main',
-            'crfnp-dependency=supar.cmds.crfnp_dependency:main',
-            'crf-dependency=supar.cmds.crf_dependency:main',
-            'crf2o-dependency=supar.cmds.crf2o_dependency:main',
-            'crf-constituency=supar.cmds.crf_constituency:main'
+            'biaffine-dep=supar.cmds.biaffine_dep:main',
+            'crfnp-dep=supar.cmds.crfnp_dep:main',
+            'crf-dep=supar.cmds.crf_dep:main',
+            'crf2o-dep=supar.cmds.crf2o_dep:main',
+            'crf-con=supar.cmds.crf_con:main',
+            'biaffine-sdp=supar.cmds.biaffine_sdp:main',
+            'vi-sdp=supar.cmds.vi_sdp:main'
         ]
     },
     python_requires='>=3.7',

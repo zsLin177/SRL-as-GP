@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 
-from .constituency import CRFConstituencyModel, VIConstituencyModel
-from .dependency import (BiaffineDependencyModel, CRF2oDependencyModel,
-                         CRFDependencyModel, CRFNPDependencyModel,
-                         VIDependencyModel)
-from .semantic_dependency import (BiaffineSemanticDependencyModel,
-                                  VISemanticDependencyModel)
+from .con import CRFConstituencyModel, VIConstituencyModel
+from .dep import (BiaffineDependencyModel, CRF2oDependencyModel,
+                  CRFDependencyModel, CRFNPDependencyModel, VIDependencyModel)
+from .sdp import BiaffineSemanticDependencyModel, VISemanticDependencyModel
 
 __all__ = ['BiaffineDependencyModel',
            'CRFNPDependencyModel',
