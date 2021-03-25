@@ -5,7 +5,7 @@ import os
 import torch
 import torch.nn as nn
 from supar.models import CRFConstituencyModel, VIConstituencyModel
-from supar.parsers import Parser
+from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, eos, pad, unk
 from supar.utils.field import ChartField, Field, RawField, SubwordField

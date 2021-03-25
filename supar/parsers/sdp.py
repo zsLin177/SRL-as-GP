@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from supar.models import (BiaffineSemanticDependencyModel,
                           VISemanticDependencyModel)
-from supar.parsers import Parser
+from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField

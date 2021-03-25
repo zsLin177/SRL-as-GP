@@ -38,7 +38,7 @@ class MFVIDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logQ = self.mfvi(*(s.requires_grad_() for s in scores), mask)
+        logQ = self.mfvi(*scores, mask)
         marginals = logQ.exp()
 
         if target is None:
@@ -107,7 +107,7 @@ class MFVIConstituency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
+        marginals = self.mfvi(*scores, mask)
 
         if target is None:
             return marginals
@@ -176,7 +176,7 @@ class MFVISemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.mfvi(*(s.requires_grad_() for s in scores), mask)
+        marginals = self.mfvi(*scores, mask)
 
         if target is None:
             return marginals
@@ -249,7 +249,7 @@ class LBPSemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.lbp(*(s.requires_grad_() for s in scores), mask)
+        marginals = self.lbp(*scores, mask)
 
         if target is None:
             return marginals
