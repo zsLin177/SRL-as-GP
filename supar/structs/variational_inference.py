@@ -43,20 +43,20 @@ class MFVIDependency(nn.Module):
 
         if target is None:
             return marginals
-        loss = F.cross_entropy(logQ[mask], target[mask])
+        loss = F.nll_loss(logQ[mask], target[mask])
 
         return loss, marginals
 
     def mfvi(self, s_arc, s_sib, mask):
         batch_size, seq_len = mask.shape
-        hs, ms = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len)
-        mask = mask.index_fill(1, hs.new_tensor(0), 1)
+        ls, rs = torch.stack(torch.where(mask.new_ones(seq_len, seq_len))).view(-1, seq_len, seq_len).sort(0)[0]
+        mask = mask.index_fill(1, ls.new_tensor(0), 1)
         # [seq_len, seq_len, batch_size], (h->m)
         mask = (mask.unsqueeze(-1) & mask.unsqueeze(-2)).permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
-        mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
-        mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
+        mask2o = mask2o & ls.unsqueeze(-1).ne(ls.new_tensor(range(seq_len))).unsqueeze(-1)
+        mask2o = mask2o & rs.unsqueeze(-1).ne(rs.new_tensor(range(seq_len))).unsqueeze(-1)
         # [seq_len, seq_len, batch_size], (h->m)
         s_arc = s_arc.permute(2, 1, 0)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
@@ -115,28 +115,28 @@ class MFVIConstituency(nn.Module):
 
         return loss, marginals
 
-    def mfvi(self, s_con, s_bin, mask):
+    def mfvi(self, s_span, s_pair, mask):
         batch_size, seq_len, _ = mask.shape
-        hs, ms = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len)
+        ls, rs = torch.stack(torch.where(torch.ones_like(mask[0]))).view(-1, seq_len, seq_len).sort(0)[0]
         # [seq_len, seq_len, batch_size], (l->r)
         mask = mask.permute(1, 2, 0)
         # [seq_len, seq_len, seq_len, batch_size], (l->r->b)
         mask2o = mask.unsqueeze(2).repeat(1, 1, seq_len, 1)
-        mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
-        mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
+        mask2o = mask2o & ls.unsqueeze(-1).ne(ls.new_tensor(range(seq_len))).unsqueeze(-1)
+        mask2o = mask2o & rs.unsqueeze(-1).ne(rs.new_tensor(range(seq_len))).unsqueeze(-1)
         # [seq_len, seq_len, batch_size], (l->r)
-        s_con = s_con.permute(1, 2, 0)
+        s_span = s_span.permute(1, 2, 0)
         # [seq_len, seq_len, seq_len, batch_size], (l->r->b)
-        s_bin = s_bin.permute(1, 2, 3, 0) * mask2o
+        s_pair = s_pair.permute(1, 2, 3, 0) * mask2o
 
         # posterior distributions
         # [seq_len, seq_len, batch_size], (l->r)
-        q = s_con
+        q = s_span
 
         for _ in range(self.max_iter):
             q = q.sigmoid()
             # q(ij) = s(ij) + sum(q(jk)*s^bin(ij,jk), k != i,j
-            q = s_con + (q.unsqueeze(0) * s_bin).sum(2)
+            q = s_span + (q.unsqueeze(1) * s_pair).sum(2)
 
         return q.permute(2, 0, 1).sigmoid()
 

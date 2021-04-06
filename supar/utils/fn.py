@@ -4,23 +4,19 @@ import unicodedata
 
 
 def ispunct(token):
-    return all(unicodedata.category(char).startswith('P')
-               for char in token)
+    return all(unicodedata.category(char).startswith('P') for char in token)
 
 
 def isfullwidth(token):
-    return all(unicodedata.east_asian_width(char) in ['W', 'F', 'A']
-               for char in token)
+    return all(unicodedata.east_asian_width(char) in ['W', 'F', 'A'] for char in token)
 
 
 def islatin(token):
-    return all('LATIN' in unicodedata.name(char)
-               for char in token)
+    return all('LATIN' in unicodedata.name(char) for char in token)
 
 
 def isdigit(token):
-    return all('DIGIT' in unicodedata.name(char)
-               for char in token)
+    return all('DIGIT' in unicodedata.name(char) for char in token)
 
 
 def tohalfwidth(token):
@@ -69,7 +65,7 @@ def stripe(x, n, w, offset=(0, 0), dim=1):
                         storage_offset=(offset[0]*seq_len+offset[1])*numel)
 
 
-def pad(tensors, padding_value=0, total_length=None):
+def pad(tensors, padding_value=0, total_length=None, padding_side='right'):
     size = [len(tensors)] + [max(tensor.size(i) for tensor in tensors)
                              for i in range(len(tensors[0].size()))]
     if total_length is not None:
@@ -77,5 +73,5 @@ def pad(tensors, padding_value=0, total_length=None):
         size[1] = total_length
     out_tensor = tensors[0].data.new(*size).fill_(padding_value)
     for i, tensor in enumerate(tensors):
-        out_tensor[i][[slice(0, i) for i in tensor.size()]] = tensor
+        out_tensor[i][[slice(-i, None) if padding_side == 'left' else slice(0, i) for i in tensor.size()]] = tensor
     return out_tensor

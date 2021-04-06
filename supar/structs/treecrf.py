@@ -15,7 +15,7 @@ class MatrixTree(nn.Module):
     """
 
     @torch.enable_grad()
-    def forward(self, scores, mask, target=None, mbr=False):
+    def forward(self, scores, mask, target=None, mbr=False, partial=False):
         r"""
         Args:
             scores (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -27,6 +27,8 @@ class MatrixTree(nn.Module):
                 The tensor of gold-standard dependent-head pairs. Default: ``None``.
             mbr (bool):
                 If ``True``, marginals will be returned to perform minimum Bayes-risk (MBR) decoding. Default: ``False``.
+            partial (bool):
+                ``True`` indicates that the trees are partially annotated. Default: ``False``.
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
@@ -44,37 +46,44 @@ class MatrixTree(nn.Module):
         if mbr:
             marginals, = autograd.grad(logZ, marginals, retain_graph=training)
         marginals = marginals.float()
+
         if target is None:
             return marginals
-
-        score = scores.gather(-1, target.unsqueeze(-1)).squeeze(-1)[mask].sum()
+        # the second inside process is needed if using partial annotation
+        if partial:
+            score = self.matrix_tree(scores, mask, target)
+        else:
+            score = scores.gather(-1, target.unsqueeze(-1)).squeeze(-1)[mask].sum()
         loss = (logZ - score).float() / mask.sum()
+
         return loss, marginals
 
-    def matrix_tree(self, scores, mask):
+    def matrix_tree(self, s_arc, mask, cands=None):
         lens = mask.sum(-1)
-        batch_size, seq_len, _ = scores.shape
-        mask = mask.index_fill(1, mask.new_tensor(0).long(), 1)
-        scores = scores.masked_fill(~(mask.unsqueeze(-1) & mask.unsqueeze(-2)), float('-inf'))
+        batch_size, seq_len, _ = s_arc.shape
+        mask = mask.index_fill(1, lens.new_tensor(0), 1)
+        chart_mask = mask.unsqueeze(-1) & mask.unsqueeze(-2)
+        s_arc = s_arc.masked_fill(~chart_mask, float('-inf'))
 
-        # the numerical stability trick is borrowed from timvieira (https://github.com/timvieira/spanning_tree)
-        # log(det(exp(M))) = log(det(exp(M - m) * exp(m)))
-        #                  = log(det(exp(M - m)) * exp(m)^n)
-        #                  = log(det(exp(M - m))) + m*n
-        m = scores.view(batch_size, -1).max(-1)[0]
-        # clamp the lower bound to `torch.finfo().tiny` to prevent underflows
-        A = torch.exp(scores - m.view(-1, 1, 1)).clamp(torch.finfo().tiny)
-        # D is the weighted degree matrix
+        # set the arcs scores excluded by cands to -inf
+        if cands is not None:
+            cands = cands.unsqueeze(-1).index_fill(1, lens.new_tensor(0), -1)
+            cands = cands.eq(lens.new_tensor(range(seq_len))) | cands.lt(0)
+            cands = cands & chart_mask
+            s_arc = s_arc.masked_fill(~cands, float('-inf'))
+
+        # A(i, j) = exp(s(i, j))
+        A = torch.exp(s_arc).clamp(torch.finfo().tiny, torch.finfo().max)
+        # Weighted degree matrix
         # D(i, j) = sum_j(A(i, j)), if h == m
         #           0,              otherwise
         D = torch.zeros_like(A)
         D.diagonal(0, 1, 2).copy_(A.sum(-1))
         # Laplacian matrix
-        L = nn.init.eye_(torch.empty_like(A[0])).repeat(batch_size, 1, 1)
-        L = L.masked_scatter_(mask.unsqueeze(-1), (D - A)[mask])
-        # calculate the partition (a.k.a normalization) term
+        # L(i, j) = D(i, j) - A(i, j)
+        L = nn.init.eye_(torch.empty_like(A[0])).repeat(batch_size, 1, 1).masked_scatter_(mask.unsqueeze(-1), (D - A)[mask])
         # Z = L^(0, 0), which is the minor of L w.r.t row 0 and column 0
-        logZ = (L[:, 1:, 1:].slogdet()[1] + m*lens).sum()
+        logZ = L[:, 1:, 1:].slogdet()[1].sum()
 
         return logZ
 
@@ -130,7 +139,7 @@ class CRFDependency(nn.Module):
 
         if target is None:
             return marginals
-        # the second inside process is needed if use partial annotation
+        # the second inside process is needed if using partial annotation
         if partial:
             score = self.inside(scores, mask, target)
         else:
@@ -139,24 +148,24 @@ class CRFDependency(nn.Module):
 
         return loss, marginals
 
-    def inside(self, scores, mask, cands=None):
+    def inside(self, s_arc, mask, cands=None):
         # the end position of each sentence in a batch
         lens = mask.sum(1)
-        batch_size, seq_len, _ = scores.shape
+        batch_size, seq_len, _ = s_arc.shape
         # [seq_len, seq_len, batch_size]
-        scores = scores.permute(2, 1, 0)
-        s_i = torch.full_like(scores, float('-inf'))
-        s_c = torch.full_like(scores, float('-inf'))
+        s_arc = s_arc.permute(2, 1, 0)
+        s_i = torch.full_like(s_arc, float('-inf'))
+        s_c = torch.full_like(s_arc, float('-inf'))
         s_c.diagonal().fill_(0)
 
-        # set the scores of arcs excluded by cands to -inf
+        # set the arcs scores excluded by cands to -inf
         if cands is not None:
             mask = mask.index_fill(1, lens.new_tensor(0), 1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(-1)).permute(2, 1, 0)
             cands = cands.unsqueeze(-1).index_fill(1, lens.new_tensor(0), -1)
             cands = cands.eq(lens.new_tensor(range(seq_len))) | cands.lt(0)
             cands = cands.permute(2, 1, 0) & mask
-            scores = scores.masked_fill(~cands, float('-inf'))
+            s_arc = s_arc.masked_fill(~cands, float('-inf'))
 
         for w in range(1, seq_len):
             # n denotes the number of spans to iterate,
@@ -171,10 +180,10 @@ class CRFDependency(nn.Module):
             il = ir = ilr.permute(2, 0, 1).logsumexp(-1)
             # I(j->i) = logsumexp(C(i->r) + C(j->r+1)) + s(j->i), i <= r < j
             # fill the w-th diagonal of the lower triangular part of s_i with I(j->i) of n spans
-            s_i.diagonal(-w).copy_(il + scores.diagonal(-w))
+            s_i.diagonal(-w).copy_(il + s_arc.diagonal(-w))
             # I(i->j) = logsumexp(C(i->r) + C(j->r+1)) + s(i->j), i <= r < j
             # fill the w-th diagonal of the upper triangular part of s_i with I(i->j) of n spans
-            s_i.diagonal(w).copy_(ir + scores.diagonal(w))
+            s_i.diagonal(w).copy_(ir + s_arc.diagonal(w))
 
             # C(j->i) = logsumexp(C(r->i) + I(j->r)), i <= r < j
             cl = stripe(s_c, n, w, (0, 0), 0) + stripe(s_i, n, w, (w, 0))
@@ -243,7 +252,7 @@ class CRF2oDependency(nn.Module):
         if target is None:
             return marginals
         arcs, sibs = target
-        # the second inside process is needed if use partial annotation
+        # the second inside process is needed if using partial annotation
         if partial:
             score = self.inside(s_arc, s_sib, mask, arcs)
         else:
@@ -267,7 +276,7 @@ class CRF2oDependency(nn.Module):
         s_c = torch.full_like(s_arc, float('-inf'))
         s_c.diagonal().fill_(0)
 
-        # set the scores of arcs excluded by cands to -inf
+        # set the arcs scores excluded by cands to -inf
         if cands is not None:
             mask = mask.index_fill(1, lens.new_tensor(0), 1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(-1)).permute(2, 1, 0)
@@ -388,12 +397,12 @@ class CRFConstituency(nn.Module):
                 s.diagonal(w).copy_(scores.diagonal(w))
                 continue
             # [n, w, batch_size]
-            s_c = stripe(s, n, w-1, (0, 1)) + stripe(s, n, w-1, (1, w), 0)
+            s_s = stripe(s, n, w-1, (0, 1)) + stripe(s, n, w-1, (1, w), 0)
             # [batch_size, n, w]
-            s_c = s_c.permute(2, 0, 1)
-            if s_c.requires_grad:
-                s_c.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
-            s_c = s_c.logsumexp(-1)
-            s.diagonal(w).copy_(s_c + scores.diagonal(w))
+            s_s = s_s.permute(2, 0, 1)
+            if s_s.requires_grad:
+                s_s.register_hook(lambda x: x.masked_fill_(torch.isnan(x), 0))
+            s_s = s_s.logsumexp(-1)
+            s.diagonal(w).copy_(s_s + scores.diagonal(w))
 
         return s[0].gather(0, lens.unsqueeze(0)).sum()

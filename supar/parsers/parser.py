@@ -13,6 +13,8 @@ from supar.utils.logging import init_logger, logger
 from supar.utils.metric import Metric
 from supar.utils.parallel import DistributedDataParallel as DDP
 from supar.utils.parallel import is_master
+from torch.optim import Adam
+from torch.optim.lr_scheduler import ExponentialLR
 
 
 class Parser(object):
@@ -20,12 +22,10 @@ class Parser(object):
     NAME = None
     MODEL = None
 
-    def __init__(self, args, model, transform, optimizer=None, scheduler=None):
+    def __init__(self, args, model, transform):
         self.args = args
         self.model = model
         self.transform = transform
-        self.optimizer = optimizer
-        self.scheduler = scheduler
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, clip=5.0, epochs=5000, patience=100, **kwargs):
         args = self.args.update(locals())
@@ -38,10 +38,22 @@ class Parser(object):
         train = Dataset(self.transform, args.train, **args)
         dev = Dataset(self.transform, args.dev)
         test = Dataset(self.transform, args.test)
-        train.build(args.batch_size, args.buckets, True, dist.is_initialized())
+        train.build(args.batch_size//args.update_steps, args.buckets, True, dist.is_initialized())
         dev.build(args.batch_size, args.buckets)
         test.build(args.batch_size, args.buckets)
         logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
+
+        if args.encoder == 'lstm':
+            self.optimizer = Adam(self.model.parameters(), args.lr, (args.mu, args.nu), args.eps, args.weight_decay)
+            self.scheduler = ExponentialLR(self.optimizer, args.decay**(1/args.decay_steps))
+        else:
+            from transformers import AdamW, get_linear_schedule_with_warmup
+            steps = len(train.loader) * epochs // args.update_steps
+            self.optimizer = AdamW(
+                [{'params': c.parameters(), 'lr': args.lr * (1 if n == 'encoder' else args.lr_rate)}
+                 for n, c in self.model.named_children()],
+                args.lr)
+            self.scheduler = get_linear_schedule_with_warmup(self.optimizer, int(steps*args.warmup), steps)
 
         if dist.is_initialized():
             self.model = DDP(self.model, device_ids=[args.local_rank], find_unused_parameters=True)

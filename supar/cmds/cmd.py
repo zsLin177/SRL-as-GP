@@ -15,8 +15,8 @@ def parse(parser):
     parser.add_argument('--batch-size', default=5000, type=int, help='batch size')
     parser.add_argument("--local_rank", type=int, default=-1, help='node rank for distributed training')
     args, unknown = parser.parse_known_args()
-    args, _ = parser.parse_known_args(unknown, args)
-    args = Config.load(**vars(args))
+    args, unknown = parser.parse_known_args(unknown, args)
+    args = Config.load(**vars(args), unknown=unknown)
     Parser = args.pop('Parser')
 
     torch.set_num_threads(args.threads)

@@ -12,8 +12,6 @@ from supar.utils.field import ChartField, Field, RawField, SubwordField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.metric import SpanMetric
 from supar.utils.transform import Tree
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ExponentialLR
 
 logger = get_logger(__name__)
 
@@ -60,7 +58,7 @@ class CRFConstituencyParser(Parser):
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
-                A dict holding the unconsumed arguments that can be used to update the configurations for training.
+                A dict holding the unconsumed arguments for updating training configurations.
         """
 
         return super().train(**Config().update(locals()))
@@ -132,19 +130,19 @@ class CRFConstituencyParser(Parser):
 
         bar = progress_bar(loader)
 
-        for words, *feats, trees, charts in bar:
-            self.optimizer.zero_grad()
-
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_label = self.model(words, feats)
-            loss, _ = self.model.loss(s_con, s_label, charts, mask, self.args.mbr)
+        for i, (words, *feats, trees, charts) in enumerate(bar, 1):
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            s_span, s_label = self.model(words, feats)
+            loss, _ = self.model.loss(s_span, s_label, charts, mask, self.args.mbr)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f}")
         logger.info(f"{bar.postfix}")
@@ -156,13 +154,13 @@ class CRFConstituencyParser(Parser):
         total_loss, metric = 0, SpanMetric()
 
         for words, *feats, trees, charts in loader:
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_label = self.model(words, feats)
-            loss, s_con = self.model.loss(s_con, s_label, charts, mask, self.args.mbr)
-            chart_preds = self.model.decode(s_con, s_label, mask)
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            s_span, s_label = self.model(words, feats)
+            loss, s_span = self.model.loss(s_span, s_label, charts, mask, self.args.mbr)
+            chart_preds = self.model.decode(s_span, s_label, mask)
             # since the evaluation relies on terminals,
             # the tree should be first built and then factorized
             preds = [Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
@@ -180,38 +178,30 @@ class CRFConstituencyParser(Parser):
 
         preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_label = self.model(words, feats)
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            lens = mask[:, 0].sum(-1)
+            s_span, s_label = self.model(words, feats)
             if self.args.mbr:
-                s_con = self.model.crf(s_con, mask, mbr=True)
-            chart_preds = self.model.decode(s_con, s_label, mask)
+                s_span = self.model.crf(s_span, mask, mbr=True)
+            chart_preds = self.model.decode(s_span, s_label, mask)
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span.unbind())])
 
         return preds
 
     @classmethod
-    def build(cls, path,
-              optimizer_args={'lr': 2e-3, 'betas': (.9, .9), 'eps': 1e-12},
-              scheduler_args={'gamma': .75**(1/5000)},
-              min_freq=2,
-              fix_len=20,
-              **kwargs):
+    def build(cls, path, min_freq=2, fix_len=20, **kwargs):
         r"""
         Build a brand-new Parser, including initialization of all data fields and model parameters.
 
         Args:
             path (str):
                 The path of the model to be saved.
-            optimizer_args (dict):
-                Arguments for creating an optimizer.
-            scheduler_args (dict):
-                Arguments for creating a scheduler.
             min_freq (str):
                 The minimum frequency needed to include a token in the vocabulary. Default: 2.
             fix_len (int):
@@ -234,35 +224,52 @@ class CRFConstituencyParser(Parser):
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, eos=eos, lower=True)
         TAG, CHAR, BERT = None, None, None
-        if 'tag' in args.feat:
-            TAG = Field('tags', bos=bos, eos=eos)
-        if 'char' in args.feat:
-            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, eos=eos, fix_len=args.fix_len)
-        if 'bert' in args.feat:
-            from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast
-            tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            BERT = SubwordField('bert',
-                                pad=tokenizer.pad_token,
-                                unk=tokenizer.unk_token,
-                                bos=tokenizer.cls_token or tokenizer.cls_token,
-                                eos=tokenizer.sep_token or tokenizer.sep_token,
+        if args.encoder != 'lstm':
+            from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                      GPT2TokenizerFast)
+            t = AutoTokenizer.from_pretrained(args.bert)
+            WORD = SubwordField('words',
+                                pad=t.pad_token,
+                                unk=t.unk_token,
+                                bos=t.cls_token or t.cls_token,
+                                eos=t.sep_token or t.sep_token,
                                 fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize,
-                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
-            BERT.vocab = tokenizer.get_vocab()
+                                tokenize=t.tokenize,
+                                fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
+            WORD.vocab = t.get_vocab()
+        else:
+            WORD = Field('words', pad=pad, unk=unk, bos=bos, eos=eos, lower=True)
+            if 'tag' in args.feat:
+                TAG = Field('tags', bos=bos, eos=eos)
+            if 'char' in args.feat:
+                CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, eos=eos, fix_len=args.fix_len)
+            if 'bert' in args.feat:
+                from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                          GPT2TokenizerFast)
+                t = AutoTokenizer.from_pretrained(args.bert)
+                BERT = SubwordField('bert',
+                                    pad=t.pad_token,
+                                    unk=t.unk_token,
+                                    bos=t.cls_token or t.cls_token,
+                                    eos=t.sep_token or t.sep_token,
+                                    fix_len=args.fix_len,
+                                    tokenize=t.tokenize,
+                                    fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
+                BERT.vocab = t.get_vocab()
         TREE = RawField('trees')
         CHART = ChartField('charts')
         transform = Tree(WORD=(WORD, CHAR, BERT), POS=TAG, TREE=TREE, CHART=CHART)
 
         train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
-        if TAG is not None:
-            TAG.build(train)
-        if CHAR is not None:
-            CHAR.build(train)
+        if args.encoder == 'lstm':
+            WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+            if TAG is not None:
+                TAG.build(train)
+            if CHAR is not None:
+                CHAR.build(train)
         CHART.build(train)
         args.update({
-            'n_words': WORD.vocab.n_init,
+            'n_words': len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
             'n_labels': len(CHART.vocab),
             'n_tags': len(TAG.vocab) if TAG is not None else None,
             'n_chars': len(CHAR.vocab) if CHAR is not None else None,
@@ -276,13 +283,12 @@ class CRFConstituencyParser(Parser):
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).load_pretrained(WORD.embed).to(args.device)
+        model = cls.MODEL(**args).to(args.device)
+        if args.encoder == 'lstm':
+            model.load_pretrained(WORD.embed)
         logger.info(f"{model}\n")
 
-        optimizer = Adam(model.parameters(), **optimizer_args)
-        scheduler = ExponentialLR(optimizer, **scheduler_args)
-
-        return cls(args, model, transform, optimizer, scheduler)
+        return cls(args, model, transform)
 
 
 class VIConstituencyParser(CRFConstituencyParser):
@@ -315,7 +321,7 @@ class VIConstituencyParser(CRFConstituencyParser):
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
-                A dict holding the unconsumed arguments that can be used to update the configurations for training.
+                A dict holding the unconsumed arguments for updating training configurations.
         """
 
         return super().train(**Config().update(locals()))
@@ -385,19 +391,19 @@ class VIConstituencyParser(CRFConstituencyParser):
 
         bar = progress_bar(loader)
 
-        for words, *feats, trees, charts in bar:
-            self.optimizer.zero_grad()
-
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_bin, s_label = self.model(words, feats)
-            loss, _ = self.model.loss(s_con, s_bin, s_label, charts, mask)
+        for i, (words, *feats, trees, charts) in enumerate(bar, 1):
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            s_span, s_pair, s_label = self.model(words, feats)
+            loss, _ = self.model.loss(s_span, s_pair, s_label, charts, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f}")
         logger.info(f"{bar.postfix}")
@@ -409,13 +415,13 @@ class VIConstituencyParser(CRFConstituencyParser):
         total_loss, metric = 0, SpanMetric()
 
         for words, *feats, trees, charts in loader:
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_bin, s_label = self.model(words, feats)
-            loss, s_con = self.model.loss(s_con, s_bin, s_label, charts, mask)
-            chart_preds = self.model.decode(s_con, s_label, mask)
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            s_span, s_pair, s_label = self.model(words, feats)
+            loss, s_span = self.model.loss(s_span, s_pair, s_label, charts, mask)
+            chart_preds = self.model.decode(s_span, s_label, mask)
             # since the evaluation relies on terminals,
             # the tree should be first built and then factorized
             preds = [Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
@@ -433,16 +439,17 @@ class VIConstituencyParser(CRFConstituencyParser):
 
         preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
-            batch_size, seq_len = words.shape
-            lens = words.ne(self.args.pad_index).sum(1) - 1
-            mask = lens.new_tensor(range(seq_len - 1)) < lens.view(-1, 1, 1)
-            mask = mask & mask.new_ones(seq_len-1, seq_len-1).triu_(1)
-            s_con, s_bin, s_label = self.model(words, feats)
-            s_con = self.model.vi((s_con, s_bin), mask)
-            chart_preds = self.model.decode(s_con, s_label, mask)
+            batch_size, seq_len = words.shape[:2]
+            word_mask = words.ne(self.args.pad_index)[:, 1:]
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
+            lens = mask[:, 0].sum(-1)
+            s_span, s_pair, s_label = self.model(words, feats)
+            s_span = self.model.vi((s_span, s_pair), mask)
+            chart_preds = self.model.decode(s_span, s_label, mask)
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_con.unbind())])
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span.unbind())])
 
         return preds

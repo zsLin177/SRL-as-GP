@@ -2,11 +2,10 @@
 
 from .con import CRFConstituencyModel, VIConstituencyModel
 from .dep import (BiaffineDependencyModel, CRF2oDependencyModel,
-                  CRFDependencyModel, CRFNPDependencyModel, VIDependencyModel)
+                  CRFDependencyModel, VIDependencyModel)
 from .sdp import BiaffineSemanticDependencyModel, VISemanticDependencyModel
 
 __all__ = ['BiaffineDependencyModel',
-           'CRFNPDependencyModel',
            'CRFDependencyModel',
            'CRF2oDependencyModel',
            'VIDependencyModel',

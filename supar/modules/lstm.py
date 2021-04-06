@@ -17,30 +17,34 @@ class CharLSTM(nn.Module):
             The number of characters.
         n_embed (int):
             The size of each embedding vector as input to LSTM.
+        n_hidden (int):
+            The size of each LSTM hidden state.
         n_out (int):
             The size of each output vector.
         pad_index (int):
             The index of the padding token in the vocabulary. Default: 0.
     """
 
-    def __init__(self, n_chars, n_embed, n_out, pad_index=0):
+    def __init__(self, n_chars, n_embed, n_hidden, n_out, pad_index=0):
         super().__init__()
 
         self.n_chars = n_chars
         self.n_embed = n_embed
+        self.n_hidden = n_hidden
         self.n_out = n_out
         self.pad_index = pad_index
 
-        self.embed = nn.Embedding(num_embeddings=n_chars,
-                                  embedding_dim=n_embed)
-
-        self.lstm = nn.LSTM(input_size=n_embed,
-                            hidden_size=n_out//2,
-                            batch_first=True,
-                            bidirectional=True)
+        self.embed = nn.Embedding(num_embeddings=n_chars, embedding_dim=n_embed)
+        self.lstm = nn.LSTM(input_size=n_embed, hidden_size=n_hidden//2, batch_first=True, bidirectional=True)
+        self.projection = nn.Linear(in_features=n_hidden, out_features=n_out) if n_hidden != n_out else nn.Identity()
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.n_chars}, {self.n_embed}, n_out={self.n_out}, pad_index={self.pad_index})"
+        s = f"{self.n_chars}, {self.n_embed}"
+        if self.n_hidden != self.n_out:
+            s += f", n_hidden={self.n_hidden}"
+        s += f", n_out={self.n_out}, pad_index={self.pad_index}"
+
+        return f"{self.__class__.__name__}({s})"
 
     def forward(self, x):
         r"""
@@ -62,9 +66,10 @@ class CharLSTM(nn.Module):
         x = self.embed(x[char_mask])
         x = pack_padded_sequence(x, lens[char_mask].tolist(), True, False)
         x, (h, _) = self.lstm(x)
-        # [n, fix_len, n_out]
+        # [n, fix_len, n_hidden]
         h = torch.cat(torch.unbind(h), -1)
         # [batch_size, seq_len, n_out]
+        embed = self.projection(h)
         embed = h.new_zeros(*lens.shape, self.n_out)
         embed = embed.masked_scatter_(char_mask.unsqueeze(-1), h)
 
@@ -212,16 +217,9 @@ class VariationalLSTM(nn.Module):
             if self.training:
                 mask = SharedDropout.get_mask(x[0], self.dropout)
                 x = [i * mask[:len(i)] for i in x]
-            x_i, (h_i, c_i) = self.layer_forward(x=x,
-                                                 hx=(h[i, 0], c[i, 0]),
-                                                 cell=self.f_cells[i],
-                                                 batch_sizes=batch_sizes)
+            x_i, (h_i, c_i) = self.layer_forward(x, (h[i, 0], c[i, 0]), self.f_cells[i], batch_sizes)
             if self.bidirectional:
-                x_b, (h_b, c_b) = self.layer_forward(x=x,
-                                                     hx=(h[i, 1], c[i, 1]),
-                                                     cell=self.b_cells[i],
-                                                     batch_sizes=batch_sizes,
-                                                     reverse=True)
+                x_b, (h_b, c_b) = self.layer_forward(x, (h[i, 1], c[i, 1]), self.b_cells[i], batch_sizes, True)
                 x_i = torch.cat((x_i, x_b), -1)
                 h_i = torch.stack((h_i, h_b))
                 c_i = torch.stack((c_i, c_b))
@@ -229,10 +227,7 @@ class VariationalLSTM(nn.Module):
             h_n.append(h_i)
             c_n.append(h_i)
 
-        x = PackedSequence(x,
-                           sequence.batch_sizes,
-                           sequence.sorted_indices,
-                           sequence.unsorted_indices)
+        x = PackedSequence(x, sequence.batch_sizes, sequence.sorted_indices, sequence.unsorted_indices)
         hx = torch.cat(h_n, 0), torch.cat(c_n, 0)
         hx = self.permute_hidden(hx, sequence.unsorted_indices)
 

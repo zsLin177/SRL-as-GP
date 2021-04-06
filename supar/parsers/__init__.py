@@ -2,13 +2,11 @@
 
 from .con import CRFConstituencyParser, VIConstituencyParser
 from .dep import (BiaffineDependencyParser, CRF2oDependencyParser,
-                  CRFDependencyParser, CRFNPDependencyParser,
-                  VIDependencyParser)
+                  CRFDependencyParser, VIDependencyParser)
 from .parser import Parser
 from .sdp import BiaffineSemanticDependencyParser, VISemanticDependencyParser
 
 __all__ = ['BiaffineDependencyParser',
-           'CRFNPDependencyParser',
            'CRFDependencyParser',
            'CRF2oDependencyParser',
            'VIDependencyParser',

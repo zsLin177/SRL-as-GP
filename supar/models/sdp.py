@@ -2,16 +2,16 @@
 
 import torch
 import torch.nn as nn
-from supar.modules import MLP, TransformerEmbedding, CharLSTM, VariationalLSTM
+from supar.models.model import Model
+from supar.modules import MLP, CharLSTM, TransformerEmbedding
 from supar.modules.affine import Biaffine, Triaffine
-from supar.modules.dropout import IndependentDropout, SharedDropout
-from supar.modules.variational_inference import (LBPSemanticDependency,
+from supar.modules.dropout import IndependentDropout
+from supar.structs.variational_inference import (LBPSemanticDependency,
                                                  MFVISemanticDependency)
 from supar.utils import Config
-from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 
-class BiaffineSemanticDependencyModel(nn.Module):
+class BiaffineSemanticDependencyModel(Model):
     r"""
     The implementation of Biaffine Semantic Dependency Parser (:cite:`dozat-etal-2018-simpler`).
 
@@ -63,7 +63,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
             The size of LSTM hidden states. Default: 600.
         n_lstm_layers (int):
             The number of LSTM layers. Default: 3.
-        lstm_dropout (float):
+        encoder_dropout (float):
             The dropout ratio of LSTM. Default: .33.
         n_mlp_edge (int):
             Edge MLP size. Default: 600.
@@ -96,6 +96,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
                  n_embed_proj=125,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 n_char_hidden=400,
                  char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
@@ -104,7 +105,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
-                 lstm_dropout=.33,
+                 encoder_dropout=.33,
                  n_mlp_edge=600,
                  n_mlp_label=600,
                  edge_mlp_dropout=.25,
@@ -113,64 +114,77 @@ class BiaffineSemanticDependencyModel(nn.Module):
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
-        super().__init__()
+        super().__init__(**Config().update(locals()))
 
-        self.args = Config().update(locals())
-
-        self.word_embed = nn.Embedding(num_embeddings=n_words,
-                                       embedding_dim=n_embed)
-        if n_pretrained:
-            self.embed_proj = nn.Linear(n_pretrained, n_embed_proj)
-
-        self.n_input = n_embed + n_embed_proj
-        if 'tag' in feat:
-            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
-                                          embedding_dim=n_feat_embed)
-            self.n_input += n_feat_embed
-        if 'char' in feat:
-            self.char_embed = CharLSTM(n_chars=n_chars,
-                                       n_embed=n_char_embed,
-                                       n_out=n_feat_embed,
-                                       pad_index=char_pad_index)
-            self.n_input += n_feat_embed
-        if 'lemma' in feat:
-            self.lemma_embed = nn.Embedding(num_embeddings=n_lemmas,
-                                            embedding_dim=n_feat_embed)
-            self.n_input += n_feat_embed
-        if 'bert' in feat:
-            self.bert_embed = TransformerEmbedding(model=bert,
-                                                   n_layers=n_bert_layers,
-                                                   n_out=n_feat_embed,
-                                                   pad_index=bert_pad_index,
-                                                   dropout=mix_dropout)
-            self.n_input += self.bert_embed.n_out
-        self.embed_dropout = IndependentDropout(p=embed_dropout)
-
-        self.lstm = VariationalLSTM(input_size=self.n_input,
-                                    hidden_size=n_lstm_hidden,
-                                    num_layers=n_lstm_layers,
-                                    bidirectional=True,
-                                    dropout=lstm_dropout)
-        self.lstm_dropout = SharedDropout(p=lstm_dropout)
-
-        self.mlp_edge_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_edge_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_label_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
-        self.mlp_label_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_edge_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_edge_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_label_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_label_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
 
         self.edge_attn = Biaffine(n_in=n_mlp_edge, n_out=2, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.criterion = nn.CrossEntropyLoss()
-        self.interpolation = interpolation
-        self.pad_index = pad_index
-        self.unk_index = unk_index
 
-    def load_pretrained(self, embed=None):
-        if embed is not None:
-            self.pretrained = nn.Embedding.from_pretrained(embed)
-        return self
+    def build(self):
+        if self.args.encoder != 'bert':
+            self.word_embed = nn.Embedding(num_embeddings=self.args.n_words,
+                                           embedding_dim=self.args.n_embed)
 
-    def forward(self, words, feats):
+            self.args.n_input = self.args.n_embed
+            if 'tag' in self.args.feat:
+                self.tag_embed = nn.Embedding(num_embeddings=self.args.n_tags,
+                                              embedding_dim=self.args.n_feat_embed)
+                self.args.n_input += self.args.n_feat_embed
+            if 'char' in self.args.feat:
+                self.char_embed = CharLSTM(n_chars=self.args.n_chars,
+                                           n_embed=self.args.n_char_embed,
+                                           n_hidden=self.args.n_char_hidden,
+                                           n_out=self.args.n_feat_embed,
+                                           pad_index=self.args.char_pad_index)
+                self.args.n_input += self.args.n_feat_embed
+            if 'lemma' in self.args.feat:
+                self.lemma_embed = nn.Embedding(num_embeddings=self.args.n_lemmas,
+                                                embedding_dim=self.args.n_feat_embed)
+                self.args.n_input += self.args.n_feat_embed
+            if 'bert' in self.args.feat:
+                self.bert_embed = TransformerEmbedding(model=self.args.bert,
+                                                       n_layers=self.args.n_bert_layers,
+                                                       n_out=self.args.n_feat_embed,
+                                                       pad_index=self.args.bert_pad_index,
+                                                       dropout=self.args.mix_dropout,
+                                                       requires_grad=(not self.args.freeze))
+                self.args.n_input += self.bert_embed.n_out
+            self.embed_dropout = IndependentDropout(p=self.args.embed_dropout)
+        super().build()
+
+    def embed(self, words, feats):
+        ext_words = words
+        # set the indices larger than num_embeddings to unk_index
+        if hasattr(self, 'pretrained'):
+            ext_mask = words.ge(self.word_embed.num_embeddings)
+            ext_words = words.masked_fill(ext_mask, self.args.unk_index)
+
+        # get outputs from embedding layers
+        word_embed = self.word_embed(ext_words)
+        if hasattr(self, 'pretrained'):
+            word_embed += self.pretrained(words)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        if 'lemma' in self.args.feat:
+            feat_embeds.append(self.lemma_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
+        # concatenate the word and feat representations
+        embed = torch.cat((word_embed, feat_embed), -1)
+
+        return embed
+
+    def forward(self, words, feats=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -187,39 +201,8 @@ class BiaffineSemanticDependencyModel(nn.Module):
                 scores of all possible labels on each edge.
         """
 
-        _, seq_len = words.shape
-        # get the mask and lengths of given batch
-        mask = words.ne(self.pad_index)
-        ext_words = words
-        # set the indices larger than num_embeddings to unk_index
-        if hasattr(self, 'pretrained'):
-            ext_mask = words.ge(self.word_embed.num_embeddings)
-            ext_words = words.masked_fill(ext_mask, self.unk_index)
+        x = self.encode(words, feats)
 
-        # get outputs from embedding layers
-        word_embed = self.word_embed(ext_words)
-        if hasattr(self, 'pretrained'):
-            word_embed = torch.cat((word_embed, self.embed_proj(self.pretrained(words))), -1)
-
-        feat_embeds = []
-        if 'tag' in self.args.feat:
-            feat_embeds.append(self.tag_embed(feats.pop()))
-        if 'char' in self.args.feat:
-            feat_embeds.append(self.char_embed(feats.pop(0)))
-        if 'bert' in self.args.feat:
-            feat_embeds.append(self.bert_embed(feats.pop(0)))
-        if 'lemma' in self.args.feat:
-            feat_embeds.append(self.lemma_embed(feats.pop(0)))
-        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
-        # concatenate the word and feat representations
-        embed = torch.cat((word_embed, feat_embed), -1)
-
-        x = pack_padded_sequence(embed, mask.sum(1).tolist(), True, False)
-        x, _ = self.lstm(x)
-        x, _ = pad_packed_sequence(x, True, total_length=seq_len)
-        x = self.lstm_dropout(x)
-
-        # apply MLPs to the BiLSTM output states
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
         label_d = self.mlp_label_d(x)
@@ -254,7 +237,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
         edge_mask = edges.gt(0) & mask
         edge_loss = self.criterion(s_egde[mask], edges[mask])
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-        return self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
+        return self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
 
     def decode(self, s_egde, s_label):
         r"""
@@ -324,17 +307,17 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
             The size of LSTM hidden states. Default: 600.
         n_lstm_layers (int):
             The number of LSTM layers. Default: 3.
-        lstm_dropout (float):
+        encoder_dropout (float):
             The dropout ratio of LSTM. Default: .33.
         n_mlp_edge (int):
             Unary factor MLP size. Default: 600.
-        n_mlp_bin (int):
+        n_mlp_pair (int):
             Binary factor MLP size. Default: 150.
         n_mlp_label  (int):
             Label MLP size. Default: 600.
         edge_mlp_dropout (float):
             The dropout ratio of unary edge factor MLP layers. Default: .25.
-        bin_mlp_dropout (float):
+        pair_mlp_dropout (float):
             The dropout ratio of binary factor MLP layers. Default: .25.
         label_mlp_dropout (float):
             The dropout ratio of label MLP layers. Default: .33.
@@ -373,12 +356,12 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
-                 lstm_dropout=.33,
+                 encoder_dropout=.33,
                  n_mlp_edge=600,
-                 n_mlp_bin=150,
+                 n_mlp_pair=150,
                  n_mlp_label=600,
                  edge_mlp_dropout=.25,
-                 bin_mlp_dropout=.25,
+                 pair_mlp_dropout=.25,
                  label_mlp_dropout=.33,
                  inference='mfvi',
                  max_iter=3,
@@ -388,67 +371,23 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                  **kwargs):
         super().__init__(**Config().update(locals()))
 
-        self.word_embed = nn.Embedding(num_embeddings=n_words,
-                                       embedding_dim=n_embed)
-        if n_pretrained:
-            self.embed_proj = nn.Linear(n_pretrained, n_embed_proj)
-
-        self.n_input = n_embed + n_embed_proj
-        if 'tag' in feat:
-            self.tag_embed = nn.Embedding(num_embeddings=n_tags,
-                                          embedding_dim=n_feat_embed)
-            self.n_input += n_feat_embed
-        if 'char' in feat:
-            self.char_embed = CharLSTM(n_chars=n_chars,
-                                       n_embed=n_char_embed,
-                                       n_out=n_feat_embed,
-                                       pad_index=char_pad_index)
-            self.n_input += n_feat_embed
-        if 'lemma' in feat:
-            self.lemma_embed = nn.Embedding(num_embeddings=n_lemmas,
-                                            embedding_dim=n_feat_embed)
-            self.n_input += n_feat_embed
-        if 'bert' in feat:
-            self.bert_embed = TransformerEmbedding(model=bert,
-                                                   n_layers=n_bert_layers,
-                                                   n_out=n_feat_embed,
-                                                   pad_index=bert_pad_index,
-                                                   dropout=mix_dropout)
-            self.n_input += self.bert_embed.n_out
-        self.embed_dropout = IndependentDropout(p=embed_dropout)
-
-        self.lstm = VariationalLSTM(input_size=self.n_input,
-                                    hidden_size=n_lstm_hidden,
-                                    num_layers=n_lstm_layers,
-                                    bidirectional=True,
-                                    dropout=lstm_dropout)
-        self.lstm_dropout = SharedDropout(p=lstm_dropout)
-
-        self.mlp_edge_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_edge_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_bin_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
-        self.mlp_bin_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
-        self.mlp_bin_g = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_bin, dropout=bin_mlp_dropout, activation=False)
-        self.mlp_label_d = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
-        self.mlp_label_h = MLP(n_in=n_lstm_hidden*2, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_edge_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_edge_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
+        self.mlp_pair_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
+        self.mlp_pair_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
+        self.mlp_pair_g = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
+        self.mlp_label_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_label_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
 
         self.edge_attn = Biaffine(n_in=n_mlp_edge, bias_x=True, bias_y=True)
-        self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
-        self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
-        self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
+        self.sib_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
+        self.cop_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
+        self.grd_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.inference = (MFVISemanticDependency if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
-        self.interpolation = interpolation
-        self.pad_index = pad_index
-        self.unk_index = unk_index
 
-    def load_pretrained(self, embed=None):
-        if embed is not None:
-            self.pretrained = nn.Embedding.from_pretrained(embed)
-        return self
-
-    def forward(self, words, feats):
+    def forward(self, words, feats=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -465,44 +404,13 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 all possible labels on each edge of shape ``[batch_size, seq_len, seq_len, n_labels]``.
         """
 
-        _, seq_len = words.shape
-        # get the mask and lengths of given batch
-        mask = words.ne(self.pad_index)
-        ext_words = words
-        # set the indices larger than num_embeddings to unk_index
-        if hasattr(self, 'pretrained'):
-            ext_mask = words.ge(self.word_embed.num_embeddings)
-            ext_words = words.masked_fill(ext_mask, self.unk_index)
+        x = self.encode(words, feats)
 
-        # get outputs from embedding layers
-        word_embed = self.word_embed(ext_words)
-        if hasattr(self, 'pretrained'):
-            word_embed = torch.cat((word_embed, self.embed_proj(self.pretrained(words))), -1)
-
-        feat_embeds = []
-        if 'tag' in self.args.feat:
-            feat_embeds.append(self.tag_embed(feats.pop()))
-        if 'char' in self.args.feat:
-            feat_embeds.append(self.char_embed(feats.pop(0)))
-        if 'bert' in self.args.feat:
-            feat_embeds.append(self.bert_embed(feats.pop(0)))
-        if 'lemma' in self.args.feat:
-            feat_embeds.append(self.lemma_embed(feats.pop(0)))
-        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
-        # concatenate the word and feat representations
-        embed = torch.cat((word_embed, feat_embed), -1)
-
-        x = pack_padded_sequence(embed, mask.sum(1).tolist(), True, False)
-        x, _ = self.lstm(x)
-        x, _ = pad_packed_sequence(x, True, total_length=seq_len)
-        x = self.lstm_dropout(x)
-
-        # apply MLPs to the BiLSTM output states
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
-        bin_d = self.mlp_bin_d(x)
-        bin_h = self.mlp_bin_h(x)
-        bin_g = self.mlp_bin_g(x)
+        pair_d = self.mlp_pair_d(x)
+        pair_h = self.mlp_pair_h(x)
+        pair_g = self.mlp_pair_g(x)
         label_h = self.mlp_label_h(x)
         label_d = self.mlp_label_d(x)
         label_h = self.mlp_label_h(x)
@@ -510,13 +418,13 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         # [batch_size, seq_len, seq_len]
         s_egde = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
-        s_sib = self.sib_attn(bin_d, bin_d, bin_h)
+        s_sib = self.sib_attn(pair_d, pair_d, pair_h)
         s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
-        s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_cop = self.cop_attn(pair_h, pair_d, pair_h).permute(0, 3, 1, 2)
         s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->g)
-        s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_grd = self.grd_attn(pair_g, pair_d, pair_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
@@ -550,7 +458,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         edge_mask = edges.gt(0) & mask
         edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd), mask, edges)
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-        loss = self.interpolation * label_loss + (1 - self.interpolation) * edge_loss
+        loss = self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
         return loss, marginals
 
     def decode(self, s_egde, s_label):

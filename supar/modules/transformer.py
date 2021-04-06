@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from supar.modules.scalar_mix import ScalarMix
-from torch.nn.utils.rnn import pad_sequence
+from supar.utils.fn import pad
 
 
 class TransformerEmbedding(nn.Module):
@@ -21,6 +21,7 @@ class TransformerEmbedding(nn.Module):
         n_out (int):
             The requested size of the embeddings.
             If 0, uses the size of the pretrained embedding model.
+            Default: 0.
         stride (int):
             A sequence longer than the limited max length will be splitted into several small pieces
             with a window size of ``stride``. Default: 5.
@@ -37,10 +38,10 @@ class TransformerEmbedding(nn.Module):
         https://github.com/huggingface/transformers
     """
 
-    def __init__(self, model, n_layers, n_out, stride=10, pad_index=0, dropout=0, requires_grad=False):
+    def __init__(self, model, n_layers, n_out=0, stride=10, pad_index=0, dropout=0, requires_grad=False):
         super().__init__()
 
-        from transformers import AutoConfig, AutoModel
+        from transformers import AutoConfig, AutoModel, AutoTokenizer
         self.bert = AutoModel.from_pretrained(model, config=AutoConfig.from_pretrained(model, output_hidden_states=True))
         self.bert = self.bert.requires_grad_(requires_grad)
 
@@ -53,6 +54,8 @@ class TransformerEmbedding(nn.Module):
         self.dropout = dropout
         self.requires_grad = requires_grad
         self.max_len = int(max(0, self.bert.config.max_position_embeddings) or 1e12)
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model)
 
         self.scalar_mix = ScalarMix(self.n_layers, dropout)
         self.projection = nn.Linear(self.hidden_size, self.n_out, False) if self.hidden_size != n_out else nn.Identity()
@@ -78,8 +81,8 @@ class TransformerEmbedding(nn.Module):
         mask = subwords.ne(self.pad_index)
         lens = mask.sum((1, 2))
         # [batch_size, n_subwords]
-        subwords = pad_sequence(subwords[mask].split(lens.tolist()), True)
-        bert_mask = pad_sequence(mask[mask].split(lens.tolist()), True)
+        subwords = pad(subwords[mask].split(lens.tolist()), self.pad_index, padding_side=self.tokenizer.padding_side)
+        bert_mask = pad(mask[mask].split(lens.tolist()), 0, padding_side=self.tokenizer.padding_side)
 
         # return the hidden states of all layers
         bert = self.bert(subwords[:, :self.max_len], attention_mask=bert_mask[:, :self.max_len].float())[-1]
@@ -96,8 +99,7 @@ class TransformerEmbedding(nn.Module):
         bert_lens = mask.sum(-1)
         bert_lens = bert_lens.masked_fill_(bert_lens.eq(0), 1)
         # [batch_size, seq_len, fix_len, hidden_size]
-        embed = bert.new_zeros(*mask.shape, self.hidden_size)
-        embed = embed.masked_scatter_(mask.unsqueeze(-1), bert[bert_mask])
+        embed = bert.new_zeros(*mask.shape, self.hidden_size).masked_scatter_(mask.unsqueeze(-1), bert[bert_mask])
         # [batch_size, seq_len, hidden_size]
         embed = embed.sum(2) / bert_lens.unsqueeze(-1)
         embed = self.projection(embed)

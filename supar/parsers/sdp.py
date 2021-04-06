@@ -13,8 +13,7 @@ from supar.utils.field import ChartField, Field, SubwordField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.metric import ChartMetric
 from supar.utils.transform import CoNLL
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ExponentialLR
+
 
 logger = get_logger(__name__)
 
@@ -47,7 +46,7 @@ class BiaffineSemanticDependencyParser(Parser):
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
-                A dict holding the unconsumed arguments that can be used to update the configurations for training.
+                A dict holding the unconsumed arguments for updating training configurations.
         """
 
         return super().train(**Config().update(locals()))
@@ -105,18 +104,19 @@ class BiaffineSemanticDependencyParser(Parser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, labels in bar:
-            self.optimizer.zero_grad()
-
-            mask = words.ne(self.WORD.pad_index)
+        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
@@ -131,7 +131,8 @@ class BiaffineSemanticDependencyParser(Parser):
         total_loss, metric = 0, ChartMetric()
 
         for words, *feats, edges, labels in loader:
-            mask = words.ne(self.WORD.pad_index)
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
@@ -151,7 +152,8 @@ class BiaffineSemanticDependencyParser(Parser):
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
         for words, *feats in progress_bar(loader):
-            mask = words.ne(self.WORD.pad_index)
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
@@ -167,23 +169,13 @@ class BiaffineSemanticDependencyParser(Parser):
         return preds
 
     @classmethod
-    def build(cls,
-              path,
-              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12, 'weight_decay': 3e-9},
-              scheduler_args={'gamma': .75**(1/5000)},
-              min_freq=7,
-              fix_len=20,
-              **kwargs):
+    def build(cls, path, min_freq=7, fix_len=20, **kwargs):
         r"""
         Build a brand-new Parser, including initialization of all data fields and model parameters.
 
         Args:
             path (str):
                 The path of the model to be saved.
-            optimizer_args (dict):
-                Arguments for creating an optimizer.
-            scheduler_args (dict):
-                Arguments for creating a scheduler.
             min_freq (str):
                 The minimum frequency needed to include a token in the vocabulary. Default:7.
             fix_len (int):
@@ -206,61 +198,73 @@ class BiaffineSemanticDependencyParser(Parser):
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
         TAG, CHAR, LEMMA, BERT = None, None, None, None
-        if 'tag' in args.feat:
-            TAG = Field('tags', bos=bos)
-        if 'char' in args.feat:
-            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
-        if 'lemma' in args.feat:
-            LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
-        if 'bert' in args.feat:
+        if args.encoder != 'lstm':
             from transformers import (AutoTokenizer, GPT2Tokenizer,
                                       GPT2TokenizerFast)
-            tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            BERT = SubwordField('bert',
-                                pad=tokenizer.pad_token,
-                                unk=tokenizer.unk_token,
-                                bos=tokenizer.bos_token or tokenizer.cls_token,
+            t = AutoTokenizer.from_pretrained(args.bert)
+            WORD = SubwordField('words',
+                                pad=t.pad_token,
+                                unk=t.unk_token,
+                                bos=t.bos_token or t.cls_token,
                                 fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize,
-                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
-            BERT.vocab = tokenizer.get_vocab()
+                                tokenize=t.tokenize,
+                                fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
+            WORD.vocab = t.get_vocab()
+        else:
+            WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
+            if 'tag' in args.feat:
+                TAG = Field('tags', bos=bos)
+            if 'char' in args.feat:
+                CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
+            if 'lemma' in args.feat:
+                LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
+            if 'bert' in args.feat:
+                from transformers import (AutoTokenizer, GPT2Tokenizer,
+                                          GPT2TokenizerFast)
+                t = AutoTokenizer.from_pretrained(args.bert)
+                BERT = SubwordField('bert',
+                                    pad=t.pad_token,
+                                    unk=t.unk_token,
+                                    bos=t.bos_token or t.cls_token,
+                                    fix_len=args.fix_len,
+                                    tokenize=t.tokenize,
+                                    fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
+                BERT.vocab = t.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
         transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
-        embed = Embedding.load(args.embed, args.unk) if args.embed else None
-        WORD.build(train, args.min_freq, embed)
-        if TAG is not None:
-            TAG.build(train)
-        if CHAR is not None:
-            CHAR.build(train)
-        if LEMMA is not None:
-            LEMMA.build(train)
+        if args.encoder == 'lstm':
+            WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+            if TAG is not None:
+                TAG.build(train)
+            if CHAR is not None:
+                CHAR.build(train)
+            if LEMMA is not None:
+                LEMMA.build(train)
         LABEL.build(train)
         args.update({
-            'n_words': WORD.vocab.n_init,
+            'n_words': len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
             'n_tags': len(TAG.vocab) if TAG is not None else None,
             'n_chars': len(CHAR.vocab) if CHAR is not None else None,
             'char_pad_index': CHAR.pad_index if CHAR is not None else None,
             'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
-            'n_pretrained': embed.dim if embed else 0,
-            'n_embed_proj':  args.n_embed_proj if embed else 0,
             'pad_index': WORD.pad_index,
-            'unk_index': WORD.unk_index
+            'unk_index': WORD.unk_index,
+            'bos_index': WORD.bos_index
         })
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).load_pretrained(WORD.embed).to(args.device)
+        model = cls.MODEL(**args).to(args.device)
+        if args.encoder == 'lstm':
+            model.load_pretrained(WORD.embed)
         logger.info(f"{model}\n")
 
-        optimizer = Adam(model.parameters(), **optimizer_args)
-        scheduler = ExponentialLR(optimizer, **scheduler_args)
-
-        return cls(args, model, transform, optimizer, scheduler)
+        return cls(args, model, transform)
 
 
 class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
@@ -291,7 +295,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
-                A dict holding the unconsumed arguments that can be used to update the configurations for training.
+                A dict holding the unconsumed arguments for updating training configurations.
         """
 
         return super().train(**Config().update(locals()))
@@ -349,18 +353,19 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, labels in bar:
-            self.optimizer.zero_grad()
-
-            mask = words.ne(self.WORD.pad_index)
+        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds & mask), -1),
@@ -375,7 +380,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         total_loss, metric = 0, ChartMetric()
 
         for words, *feats, edges, labels in loader:
-            mask = words.ne(self.WORD.pad_index)
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
@@ -395,7 +401,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
         for words, *feats in progress_bar(loader):
-            mask = words.ne(self.WORD.pad_index)
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
@@ -410,99 +417,3 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                            for chart in preds['labels']]
 
         return preds
-
-    @classmethod
-    def build(cls,
-              path,
-              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12},
-              scheduler_args={'gamma': .75**(1/5000)},
-              min_freq=7,
-              fix_len=20,
-              **kwargs):
-        r"""
-        Build a brand-new Parser, including initialization of all data fields and model parameters.
-
-        Args:
-            path (str):
-                The path of the model to be saved.
-            optimizer_args (dict):
-                Arguments for creating an optimizer.
-            scheduler_args (dict):
-                Arguments for creating a scheduler.
-            min_freq (str):
-                The minimum frequency needed to include a token in the vocabulary. Default:7.
-            fix_len (int):
-                The max length of all subword pieces. The excess part of each piece will be truncated.
-                Required if using CharLSTM/BERT.
-                Default: 20.
-            kwargs (dict):
-                A dict holding the unconsumed arguments.
-        """
-
-        args = Config(**locals())
-        args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        if os.path.exists(path) and not args.build:
-            parser = cls.load(**args)
-            parser.model = cls.MODEL(**parser.args)
-            parser.model.load_pretrained(parser.WORD.embed).to(args.device)
-            return parser
-
-        logger.info("Building the fields")
-        WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        TAG, CHAR, LEMMA, BERT = None, None, None, None
-        if 'tag' in args.feat:
-            TAG = Field('tags', bos=bos)
-        if 'char' in args.feat:
-            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
-        if 'lemma' in args.feat:
-            LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
-        if 'bert' in args.feat:
-            from transformers import (AutoTokenizer, GPT2Tokenizer,
-                                      GPT2TokenizerFast)
-            tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            BERT = SubwordField('bert',
-                                pad=tokenizer.pad_token,
-                                unk=tokenizer.unk_token,
-                                bos=tokenizer.bos_token or tokenizer.cls_token,
-                                fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize,
-                                fn=None if not isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
-            BERT.vocab = tokenizer.get_vocab()
-        EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
-        LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
-
-        train = Dataset(transform, args.train)
-        embed = Embedding.load(args.embed, args.unk) if args.embed else None
-        WORD.build(train, args.min_freq, embed)
-        if TAG is not None:
-            TAG.build(train)
-        if CHAR is not None:
-            CHAR.build(train)
-        if LEMMA is not None:
-            LEMMA.build(train)
-        LABEL.build(train)
-        args.update({
-            'n_words': WORD.vocab.n_init,
-            'n_labels': len(LABEL.vocab),
-            'n_tags': len(TAG.vocab) if TAG is not None else None,
-            'n_chars': len(CHAR.vocab) if CHAR is not None else None,
-            'char_pad_index': CHAR.pad_index if CHAR is not None else None,
-            'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
-            'bert_pad_index': BERT.pad_index if BERT is not None else None,
-            'n_pretrained': embed.dim if embed else 0,
-            'n_embed_proj':  args.n_embed_proj if embed else 0,
-            'pad_index': WORD.pad_index,
-            'unk_index': WORD.unk_index
-        })
-        logger.info(f"{transform}")
-
-        logger.info("Building the model")
-        model = cls.MODEL(**args).load_pretrained(WORD.embed).to(args.device)
-        logger.info(f"{model}\n")
-
-        optimizer = Adam(model.parameters(), **optimizer_args)
-        scheduler = ExponentialLR(optimizer, **scheduler_args)
-
-        return cls(args, model, transform, optimizer, scheduler)

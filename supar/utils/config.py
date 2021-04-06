@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import argparse
 import os
 from ast import literal_eval
 from configparser import ConfigParser
@@ -52,7 +53,7 @@ class Config(object):
         return self.__dict__.pop(key, val)
 
     @classmethod
-    def load(cls, conf=None, **kwargs):
+    def load(cls, conf=None, unknown=None, **kwargs):
         config = ConfigParser()
         if conf is not None:
             if conf in supar.CONFIG:
@@ -61,7 +62,13 @@ class Config(object):
                 if not os.path.exists(conf):
                     torch.hub.download_url_to_file(url, conf)
         config.read(conf or [])
-        return cls(**{**dict((name, literal_eval(value))
-                             for section in config.sections()
-                             for name, value in config.items(section)),
-                      **kwargs})
+        config = dict((name, literal_eval(value))
+                      for section in config.sections()
+                      for name, value in config.items(section))
+        if unknown is not None:
+            parser = argparse.ArgumentParser()
+            for name, value in config.items():
+                parser.add_argument('--'+name.replace('_', '-'), type=type(value), default=value)
+            config.update(vars(parser.parse_args(unknown)))
+        config.update(kwargs)
+        return cls(**config)

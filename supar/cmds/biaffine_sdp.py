@@ -14,6 +14,7 @@ def main():
     subparser = subparsers.add_parser('train', help='Train a parser.')
     subparser.add_argument('--feat', '-f', choices=['tag', 'char', 'lemma', 'bert'], nargs='+', help='features to use')
     subparser.add_argument('--build', '-b', action='store_true', help='whether to build the model first')
+    subparser.add_argument('--encoder', choices=['lstm', 'bert'], default='lstm', help='encoder to use')
     subparser.add_argument('--max-len', type=int, help='max length of the sentences')
     subparser.add_argument('--buckets', default=32, type=int, help='max num of buckets to use')
     subparser.add_argument('--train', default='data/sdp/DM/train.conllu', help='path to train file')
