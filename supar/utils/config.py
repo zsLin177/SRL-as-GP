@@ -28,6 +28,9 @@ class Config(object):
     def __getitem__(self, key):
         return getattr(self, key)
 
+    def __contains__(self, key):
+        return hasattr(self, key)
+
     def __getstate__(self):
         return vars(self)
 

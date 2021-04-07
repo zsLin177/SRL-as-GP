@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
 
-from supar.models.dep import CRFDependencyModel
 import torch
 import torch.nn as nn
 from supar.models.model import Model
-from supar.modules import MLP, CharLSTM, TransformerEmbedding
-from supar.modules.affine import Biaffine, Triaffine
-from supar.modules.dropout import IndependentDropout
-from supar.structs.treecrf import CRFConstituency
-from supar.structs.variational_inference import MFVIConstituency
+from supar.modules import MLP, Biaffine, Triaffine
+from supar.structs import CRFConstituency, MFVIConstituency
 from supar.utils import Config
 from supar.utils.alg import cky
 
@@ -39,6 +35,8 @@ class CRFConstituencyModel(Model):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        n_char_hidden (int):
+            The size of hidden states of CharLSTM, required if ``feat='char'``. Default: 100.
         char_pad_index (int):
             The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
@@ -85,6 +83,7 @@ class CRFConstituencyModel(Model):
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 n_char_hidden=100,
                  char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
@@ -111,58 +110,6 @@ class CRFConstituencyModel(Model):
         self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
         self.crf = CRFConstituency()
         self.criterion = nn.CrossEntropyLoss()
-
-    def build(self):
-        if self.args.encoder != 'bert':
-            self.word_embed = nn.Embedding(num_embeddings=self.args.n_words,
-                                           embedding_dim=self.args.n_embed)
-
-            self.args.n_input = self.args.n_embed
-            if 'tag' in self.args.feat:
-                self.tag_embed = nn.Embedding(num_embeddings=self.args.n_tags,
-                                              embedding_dim=self.args.n_feat_embed)
-                self.args.n_input += self.args.n_feat_embed
-            if 'char' in self.args.feat:
-                self.char_embed = CharLSTM(n_chars=self.args.n_chars,
-                                           n_embed=self.args.n_char_embed,
-                                           n_out=self.args.n_feat_embed,
-                                           pad_index=self.args.char_pad_index)
-                self.args.n_input += self.args.n_feat_embed
-            if 'bert' in self.args.feat:
-                self.bert_embed = TransformerEmbedding(model=self.args.bert,
-                                                       n_layers=self.args.n_bert_layers,
-                                                       n_out=self.args.n_feat_embed,
-                                                       pad_index=self.args.bert_pad_index,
-                                                       dropout=self.args.mix_dropout,
-                                                       requires_grad=(not self.args.freeze))
-                self.args.n_input += self.bert_embed.n_out
-            self.embed_dropout = IndependentDropout(p=self.args.embed_dropout)
-        super().build()
-
-    def embed(self, words, feats):
-        ext_words = words
-        # set the indices larger than num_embeddings to unk_index
-        if hasattr(self, 'pretrained'):
-            ext_mask = words.ge(self.word_embed.num_embeddings)
-            ext_words = words.masked_fill(ext_mask, self.args.unk_index)
-
-        # get outputs from embedding layers
-        word_embed = self.word_embed(ext_words)
-        if hasattr(self, 'pretrained'):
-            word_embed += self.pretrained(words)
-
-        feat_embeds = []
-        if 'tag' in self.args.feat:
-            feat_embeds.append(self.tag_embed(feats.pop()))
-        if 'char' in self.args.feat:
-            feat_embeds.append(self.char_embed(feats.pop(0)))
-        if 'bert' in self.args.feat:
-            feat_embeds.append(self.bert_embed(feats.pop(0)))
-        word_embed, feat_embed = self.embed_dropout(word_embed, torch.cat(feat_embeds, -1))
-        # concatenate the word and feat representations
-        embed = torch.cat((word_embed, feat_embed), -1)
-
-        return embed
 
     def forward(self, words, feats=None):
         r"""
@@ -245,7 +192,7 @@ class CRFConstituencyModel(Model):
         return [[(i, j, labels[i][j]) for i, j, _ in cons] for cons, labels in zip(span_preds, label_preds)]
 
 
-class VIConstituencyModel(CRFDependencyModel):
+class VIConstituencyModel(CRFConstituencyModel):
     r"""
     The implementation of Constituency Parser using variational inference.
 
@@ -270,6 +217,8 @@ class VIConstituencyModel(CRFDependencyModel):
             The size of feature representations. Default: 100.
         n_char_embed (int):
             The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
+        n_char_hidden (int):
+            The size of hidden states of CharLSTM, required if ``feat='char'``. Default: 100.
         char_pad_index (int):
             The index of the padding token in the character vocabulary. Default: 0.
         bert (str):
@@ -322,6 +271,7 @@ class VIConstituencyModel(CRFDependencyModel):
                  n_embed=100,
                  n_feat_embed=100,
                  n_char_embed=50,
+                 n_char_hidden=100,
                  char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,

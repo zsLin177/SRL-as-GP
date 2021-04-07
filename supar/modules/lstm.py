@@ -56,6 +56,7 @@ class CharLSTM(nn.Module):
             ~torch.Tensor:
                 The embeddings of shape ``[batch_size, seq_len, n_out]`` derived from the characters.
         """
+
         # [batch_size, seq_len, fix_len]
         mask = x.ne(self.pad_index)
         # [batch_size, seq_len]
@@ -69,9 +70,7 @@ class CharLSTM(nn.Module):
         # [n, fix_len, n_hidden]
         h = torch.cat(torch.unbind(h), -1)
         # [batch_size, seq_len, n_out]
-        embed = self.projection(h)
-        embed = h.new_zeros(*lens.shape, self.n_out)
-        embed = embed.masked_scatter_(char_mask.unsqueeze(-1), h)
+        embed = h.new_zeros(*lens.shape, self.n_out).masked_scatter_(char_mask.unsqueeze(-1), self.projection(h))
 
         return embed
 
