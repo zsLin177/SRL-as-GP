@@ -8,7 +8,7 @@ import torch.nn.functional as F
 class MFVIDependency(nn.Module):
     r"""
     Mean Field Variational Inference for approximately calculating marginals
-    of dependency trees (:cite:`wang-etal-2020-second`).
+    of dependency trees (:cite:`wang-tu-2020-second`).
     """
 
     def __init__(self, max_iter=3):
@@ -77,7 +77,7 @@ class MFVIDependency(nn.Module):
 class MFVIConstituency(nn.Module):
     r"""
     Mean Field Variational Inference for approximately calculating marginals
-    of dependency trees (:cite:`wang-etal-2020-second`).
+    of dependency trees (:cite:`wang-tu-2020-second`).
     """
 
     def __init__(self, max_iter=3):

@@ -540,7 +540,7 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
 
 class VIDependencyModel(BiaffineDependencyModel):
     r"""
-    The implementation of Dependency Parser using Variational Inference (:cite:`wang-etal-2020-second`).
+    The implementation of Dependency Parser using Variational Inference (:cite:`wang-tu-2020-second`).
 
     Args:
         n_words (int):

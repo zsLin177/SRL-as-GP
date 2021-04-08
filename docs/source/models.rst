@@ -9,12 +9,6 @@ BiaffineDependencyModel
 .. autoclass:: BiaffineDependencyModel
     :members:
 
-CRFNPDependencyModel
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autoclass:: CRFNPDependencyModel
-    :members:
-
 CRFDependencyModel
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

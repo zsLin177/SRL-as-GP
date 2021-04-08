@@ -15,12 +15,6 @@ BiaffineDependencyParser
 .. autoclass:: BiaffineDependencyParser
     :members:
 
-CRFNPDependencyParser
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-.. autoclass:: CRFNPDependencyParser
-    :members:
-
 CRFDependencyParser
 ~~~~~~~~~~~~~~~~~~~~~~~~
 

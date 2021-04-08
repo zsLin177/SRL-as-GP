@@ -1,34 +1,49 @@
-Structs
+Modules
 ==================
 
-.. currentmodule:: supar.structs
+.. currentmodule:: supar.modules
 
-TreeCRF
+Affine
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: MatrixTree
+.. autoclass:: Biaffine
     :members:
 
-.. autoclass:: CRFDependency
+.. autoclass:: Triaffine
     :members:
 
-.. autoclass:: CRF2oDependency
-    :members:
-
-.. autoclass:: CRFConstituency
-    :members:
-
-Variational Inference
+TransformerEmbedding
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-.. autoclass:: MFVIDependency
+.. autoclass:: TransformerEmbedding
     :members:
 
-.. autoclass:: MFVIConstituency
+.. autoclass:: ScalarMix
     :members:
 
-.. autoclass:: MFVISemanticDependency
+CharLSTM
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: CharLSTM
     :members:
 
-.. autoclass:: LBPSemanticDependency
+VariationalLSTM
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: VariationalLSTM
+    :members:
+
+Dropout
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: IndependentDropout
+    :members:
+
+.. autoclass:: SharedDropout
+    :members:
+
+MLP
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: MLP
     :members:

@@ -765,7 +765,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
 class VIDependencyParser(BiaffineDependencyParser):
     r"""
-    The implementation of Dependency Parser using Variational Inference (:cite:`wang-etal-2020-second`).
+    The implementation of Dependency Parser using Variational Inference (:cite:`wang-tu-2020-second`).
     """
 
     NAME = 'vi-dependency'
