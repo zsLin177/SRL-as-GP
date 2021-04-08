@@ -27,7 +27,8 @@ class Parser(object):
         self.model = model
         self.transform = transform
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, clip=5.0, epochs=5000, patience=100, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              clip=5.0, epochs=5000, patience=100, **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 

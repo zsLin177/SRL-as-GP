@@ -25,13 +25,19 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              VISemanticDependencyParser]}
 
 MODEL = {
-    'biaffine-dep-bert-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.bert.zip',
-    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.zip',
-    'vi-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.zip'
+    'biaffine-dep-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.roberta.zip',
+    'biaffine-dep-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.electra.zip',
+    'crf-con-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.roberta.zip',
+    'crf-con-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.electra.zip',
+    'biaffine-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.lstm.tag-char-lemma.zip',
+    'vi-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.vi.sdp.lstm.tag-char-lemma.zip'
 }
 
 CONFIG = {
-    'biaffine-dep-bert-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.bert.ini',
-    'biaffine-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.ini',
-    'vi-sdp-en': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.tag-char-lemma.ini'
+    'biaffine-dep-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.roberta.ini',
+    'biaffine-dep-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.electra.ini',
+    'crf-con-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.roberta.ini',
+    'crf-con-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.electra.ini',
+    'biaffine-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.lstm.tag-char-lemma.ini',
+    'vi-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.vi.sdp.lstm.tag-char-lemma.ini'
 }

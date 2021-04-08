@@ -6,55 +6,22 @@
 [![downloads](https://pepy.tech/badge/supar)](https://pepy.tech/project/supar)
 [![LICENSE](https://img.shields.io/github/license/yzhangcs/parser)](https://github.com/yzhangcs/parser/blob/master/LICENSE)
 
-`SuPar` provides a collection of state-of-the-art syntactic parsing models with Biaffine Parser ([Dozat and Manning, 2017](#dozat-2017-biaffine)) as the basic architecture:
-* Biaffine Dependency Parser ([Dozat and Manning, 2017](#dozat-2017-biaffine))
-* CRFNP Dependency Parser ([Koo et al., 2007](#koo-2007-structured); [Ma and Hovy, 2017](#ma-2017-neural))
-* CRF Dependency Parser ([Zhang et al., 2020a](#zhang-2020-efficient))
-* CRF2o Dependency Parser ([Zhang et al, 2020a](#zhang-2020-efficient))
-* CRF Constituency Parser ([Zhang et al, 2020b](#zhang-2020-fast))
+`SuPar` provides a collection of state-of-the-art syntactic/semantic parsing models:
+* Biaffine Dependency Parser ([Dozat and Manning, 2017](https://parser.readthedocs.io/en/latest/references.html#dozat-2017-biaffine))
+* CRF Dependency Parser ([Zhang et al., 2020a](https://parser.readthedocs.io/en/latest/references.html#dozat-2018-simpler); [Koo et al., 2007](https://parser.readthedocs.io/en/latest/references.html#koo-2007-structured); [Ma and Hovy, 2017](https://parser.readthedocs.io/en/latest/references.html#ma-2017-neural))
+* CRF2o Dependency Parser ([Zhang et al, 2020a](https://parser.readthedocs.io/en/latest/references.html#zhang-2020-efficient))
+* CRF Constituency Parser ([Zhang et al, 2020b](https://parser.readthedocs.io/en/latest/references.html#zhang-2020-fast))
+* Biaffine Semantic Dependency Parser ([Dozat and Manning, 2018](https://parser.readthedocs.io/en/latest/references.html#wang-2019-second))
+* VI Semantic Dependency Parser ([Wang et al, 2019](https://parser.readthedocs.io/en/latest/references.html#wang-2019-second))
 
-You can load released pretrained models for the above parsers and obtain dependency/constituency parsing trees very conveniently, as detailed in [Usage](#Usage).
+You can load released pretrained models for the above parsers and obtain dependency/constituency parsing trees very conveniently, as detailed in [Usage](##Usage).
 
-The implementations of several popular and well-known algorithms, like MST (ChuLiu/Edmonds), Eisner, CKY, MatrixTree, TreeCRF, are also integrated in this package.
+The implementations of several popular and well-known algorithms, like MST (ChuLiu/Edmonds), Eisner, CKY, MatrixTree, TreeCRF, MFVI and LBP, are also integrated in this package.
 
 Besides POS Tag embeddings used by the vanilla Biaffine Parser as auxiliary inputs to the encoder, optionally, `SuPar` also allows to utilize CharLSTM/BERT layers to produce character/subword-level features.
 Among them, CharLSTM is taken as the default option, which avoids additional requirements for generating POS tags, as well as the inefficiency of BERT.
 The BERT module in `SuPar` extracts BERT representations from the pretrained model in [`transformers`](https://github.com/huggingface/transformers).
 It is also compatiable with other language models like XLNet, RoBERTa and ELECTRA, etc.
-
-The CRF models for Dependency/Constituency parsing are our recent works published in ACL 2020 and IJCAI 2020 respectively.
-If you are interested in them, please cite:
-```bib
-@inproceedings{zhang-etal-2020-efficient,
-  title     = {Efficient Second-Order {T}ree{CRF} for Neural Dependency Parsing},
-  author    = {Zhang, Yu and Li, Zhenghua and Zhang Min},
-  booktitle = {Proceedings of ACL},
-  year      = {2020},
-  url       = {https://www.aclweb.org/anthology/2020.acl-main.302},
-  pages     = {3295--3305}
-}
-
-@inproceedings{zhang-etal-2020-fast,
-  title     = {Fast and Accurate Neural {CRF} Constituency Parsing},
-  author    = {Zhang, Yu and Zhou, Houquan and Li, Zhenghua},
-  booktitle = {Proceedings of IJCAI},
-  year      = {2020},
-  doi       = {10.24963/ijcai.2020/560},
-  url       = {https://doi.org/10.24963/ijcai.2020/560},
-  pages     = {4046--4053}
-}
-```
-
-## Contents
-
-* [Contents](#contents)
-* [Installation](#installation)
-* [Performance](#performance)
-* [Usage](#usage)
-  * [Training](#training)
-  * [Evaluation](#evaluation)
-* [TODO](#todo)
-* [References](#references)
 
 ## Installation
 
@@ -69,9 +36,9 @@ $ python setup.py install
 ```
 
 As a prerequisite, the following requirements should be satisfied:
-* `python`: 3.7
-* [`pytorch`](https://github.com/pytorch/pytorch): >= 1.4
-* [`transformers`](https://github.com/huggingface/transformers): >= 3.1
+* `python`: >= 3.7
+* [`pytorch`](https://github.com/pytorch/pytorch): >= 1.7
+* [`transformers`](https://github.com/huggingface/transformers): >= 4.0
 
 ## Performance
 
@@ -390,27 +357,27 @@ Dataset(n_sentences=2416, n_batches=11, n_buckets=8)
 2020-07-25 20:59:20 INFO 0:00:01.253601s elapsed, 1927.25 Sents/s
 ```
 
-## TODO
+## Citation
 
-- [ ] [GNN Parser](#ji-2019-graph)
-- [ ] [Second-Order Parser with Mean Field Variational Inference](#wang-2019-second)
-- [ ] [Stack Pointer](#ma-2018-stackptr)
+The CRF models for Dependency/Constituency parsing are our recent works published in ACL 2020 and IJCAI 2020 respectively.
+If you are interested in them, please cite:
+```bib
+@inproceedings{zhang-etal-2020-efficient,
+  title     = {Efficient Second-Order {T}ree{CRF} for Neural Dependency Parsing},
+  author    = {Zhang, Yu and Li, Zhenghua and Zhang Min},
+  booktitle = {Proceedings of ACL},
+  year      = {2020},
+  url       = {https://www.aclweb.org/anthology/2020.acl-main.302},
+  pages     = {3295--3305}
+}
 
-## References
-
-* <a id="dozat-2017-biaffine"></a>
-Timothy Dozat and Christopher D. Manning. 2017. [Deep Biaffine Attention for Neural Dependency Parsing](https://openreview.net/forum?id=Hk95PK9le).
-* <a id="ji-2019-graph"></a>
-Tao Ji, Yuanbin Wu and Man Lan. 2019. [Graph-based Dependency Parsing with Graph Neural Networks](https://www.aclweb.org/anthology/P19-1237/).
-* <a id="koo-2007-structured"></a>
-Terry Koo, Amir Globerson, Xavier Carreras and Michael Collins. 2007. [Structured Prediction Models via the Matrix-Tree Theorem](https://www.aclweb.org/anthology/D07-1015/).
-* <a id="ma-2017-neural"></a>
-Xuezhe Ma and Eduard Hovy. 2017. [Neural Probabilistic Model for Non-projective MST Parsing](https://www.aclweb.org/anthology/I17-1007/).
-* <a id="ma-2018-stackptr"></a>
-Xuezhe Ma, Zecong Hu, Jingzhou Liu, Nanyun Peng, Graham Neubig and Eduard Hovy. 2018. [Stack-Pointer Networks for Dependency Parsing](https://www.aclweb.org/anthology/P18-1130/).
-* <a id="wang-2019-second"></a>
-Xinyu Wang, Jingxian Huang, and Kewei Tu. 2019. [Second-Order Semantic Dependency Parsing with End-to-End Neural Networks](https://www.aclweb.org/anthology/P19-1454/).
-* <a id="zhang-2020-fast"></a>
-Yu Zhang, Houquan Zhou and Zhenghua Li. 2020. [Fast and Accurate Neural CRF Constituency Parsing](https://www.ijcai.org/Proceedings/2020/560/).
-* <a id="zhang-2020-efficient"></a>
-Yu Zhang, Zhenghua Li and Min Zhang. 2020. [Efficient Second-Order TreeCRF for Neural Dependency Parsing](https://www.aclweb.org/anthology/2020.acl-main.302/).
+@inproceedings{zhang-etal-2020-fast,
+  title     = {Fast and Accurate Neural {CRF} Constituency Parsing},
+  author    = {Zhang, Yu and Zhou, Houquan and Li, Zhenghua},
+  booktitle = {Proceedings of IJCAI},
+  year      = {2020},
+  doi       = {10.24963/ijcai.2020/560},
+  url       = {https://doi.org/10.24963/ijcai.2020/560},
+  pages     = {4046--4053}
+}
+```

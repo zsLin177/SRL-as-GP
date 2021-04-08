@@ -33,7 +33,7 @@ class BiaffineDependencyParser(Parser):
         self.TAG = self.transform.CPOS
         self.ARC, self.REL = self.transform.HEAD, self.transform.DEPREL
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000,
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
               punct=False, tree=False, proj=False, partial=False, verbose=True, **kwargs):
         r"""
         Args:
@@ -43,6 +43,8 @@ class BiaffineDependencyParser(Parser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             punct (bool):
                 If ``False``, ignores the punctuations during evaluation. Default: ``False``.
             tree (bool):
@@ -60,7 +62,7 @@ class BiaffineDependencyParser(Parser):
         return super().train(**Config().update(locals()))
 
     def evaluate(self, data, buckets=8, batch_size=5000,
-                 punct=False, tree=True, proj=False, partial=False, comp=False, verbose=True, **kwargs):
+                 punct=False, tree=True, proj=False, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             data (str):
@@ -77,8 +79,6 @@ class BiaffineDependencyParser(Parser):
                 If ``True``, ensures to output projective trees. Default: ``False``.
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -90,7 +90,7 @@ class BiaffineDependencyParser(Parser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, comp=False,
+    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False,
                 tree=True, proj=False, verbose=True, **kwargs):
         r"""
         Args:
@@ -108,8 +108,6 @@ class BiaffineDependencyParser(Parser):
                 The number of tokens in each batch. Default: 5000.
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             tree (bool):
                 If ``True``, ensures to output well-formed trees. Default: ``False``.
             proj (bool):
@@ -308,8 +306,8 @@ class CRFDependencyParser(BiaffineDependencyParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, punct=False,
-              mbr=True, tree=False, proj=False, partial=False, verbose=True, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              punct=False, mbr=True, tree=False, proj=False, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -318,6 +316,8 @@ class CRFDependencyParser(BiaffineDependencyParser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             punct (bool):
                 If ``False``, ignores the punctuations during evaluation. Default: ``False``.
             mbr (bool):
@@ -337,7 +337,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
         return super().train(**Config().update(locals()))
 
     def evaluate(self, data, buckets=8, batch_size=5000, punct=False,
-                 mbr=True, tree=True, proj=True, partial=False, comp=False, verbose=True, **kwargs):
+                 mbr=True, tree=True, proj=True, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             data (str):
@@ -356,8 +356,6 @@ class CRFDependencyParser(BiaffineDependencyParser):
                 If ``True``, ensures to output projective trees. Default: ``False``.
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -369,7 +367,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, comp=False,
+    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False,
                 mbr=True, tree=True, proj=True, verbose=True, **kwargs):
         r"""
         Args:
@@ -387,8 +385,6 @@ class CRFDependencyParser(BiaffineDependencyParser):
                 The number of tokens in each batch. Default: 5000.
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             mbr (bool):
                 If ``True``, returns marginals for MBR decoding. Default: ``True``.
             tree (bool):
@@ -497,8 +493,8 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, punct=False,
-              mbr=True, tree=False, proj=False, partial=False, verbose=True, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              punct=False, mbr=True, tree=False, proj=False, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -507,6 +503,8 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             punct (bool):
                 If ``False``, ignores the punctuations during evaluation. Default: ``False``.
             mbr (bool):
@@ -526,7 +524,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
         return super().train(**Config().update(locals()))
 
     def evaluate(self, data, buckets=8, batch_size=5000, punct=False,
-                 mbr=True, tree=True, proj=True, partial=False, comp=False, verbose=True, **kwargs):
+                 mbr=True, tree=True, proj=True, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             data (str):
@@ -545,8 +543,6 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                 If ``True``, ensures to output projective trees. Default: ``False``.
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -558,7 +554,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, comp=False,
+    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False,
                 mbr=True, tree=True, proj=True, verbose=True, **kwargs):
         r"""
         Args:
@@ -576,8 +572,6 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                 The number of tokens in each batch. Default: 5000.
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             mbr (bool):
                 If ``True``, returns marginals for MBR decoding. Default: ``True``.
             tree (bool):
@@ -780,8 +774,8 @@ class VIDependencyParser(BiaffineDependencyParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, punct=False,
-              tree=False, proj=False, partial=False, verbose=True, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              punct=False, tree=False, proj=False, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -790,6 +784,8 @@ class VIDependencyParser(BiaffineDependencyParser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             punct (bool):
                 If ``False``, ignores the punctuations during evaluation. Default: ``False``.
             tree (bool):
@@ -807,7 +803,7 @@ class VIDependencyParser(BiaffineDependencyParser):
         return super().train(**Config().update(locals()))
 
     def evaluate(self, data, buckets=8, batch_size=5000, punct=False,
-                 tree=True, proj=True, partial=False, comp=False, verbose=True, **kwargs):
+                 tree=True, proj=True, partial=False, verbose=True, **kwargs):
         r"""
         Args:
             data (str):
@@ -824,8 +820,6 @@ class VIDependencyParser(BiaffineDependencyParser):
                 If ``True``, ensures to output projective trees. Default: ``False``.
             partial (bool):
                 ``True`` denotes the trees are partially annotated. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -837,7 +831,7 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, comp=False,
+    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False,
                 tree=True, proj=True, verbose=True, **kwargs):
         r"""
         Args:
@@ -855,8 +849,6 @@ class VIDependencyParser(BiaffineDependencyParser):
                 The number of tokens in each batch. Default: 5000.
             prob (bool):
                 If ``True``, outputs the probabilities. Default: ``False``.
-            comp (bool):
-                If ``True``, complete partial data. Default: ``False``.
             tree (bool):
                 If ``True``, ensures to output well-formed trees. Default: ``False``.
             proj (bool):

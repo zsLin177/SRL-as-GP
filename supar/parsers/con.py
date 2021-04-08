@@ -34,7 +34,8 @@ class CRFConstituencyParser(Parser):
         self.TREE = self.transform.TREE
         self.CHART = self.transform.CHART
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, mbr=True,
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
+              mbr=True,
               delete={'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''},
               equal={'ADVP': 'PRT'},
               verbose=True,
@@ -47,6 +48,8 @@ class CRFConstituencyParser(Parser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             mbr (bool):
                 If ``True``, performs MBR decoding. Default: ``True``.
             delete (set[str]):
@@ -299,7 +302,7 @@ class VIConstituencyParser(CRFConstituencyParser):
     NAME = 'vi-constituency'
     MODEL = VIConstituencyModel
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000,
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
               delete={'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''},
               equal={'ADVP': 'PRT'},
               verbose=True,
@@ -312,6 +315,8 @@ class VIConstituencyParser(CRFConstituencyParser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             delete (set[str]):
                 A set of labels that will not be taken into consideration during evaluation.
                 Default: {'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''}.

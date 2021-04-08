@@ -275,7 +275,7 @@ class CoNLL(Transform):
             s = '\n'.join([f"{i}\t{word}\t{lemma}\t{tag}\t" + '\t'.join(['_']*6)
                            for i, (word, lemma, tag) in enumerate(tokens, 1)])
         else:
-            raise RuntimeError(f"The input sequence {tokens} is invalid. Only str or word/pos/lemma tuples are support.")
+            raise RuntimeError(f"Invalid sequence {tokens}. Only list of str or list of word/pos/lemma tuples are support.")
         return s + '\n'
 
     @classmethod

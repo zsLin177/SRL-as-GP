@@ -34,7 +34,7 @@ class BiaffineSemanticDependencyParser(Parser):
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1, verbose=True, **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -43,6 +43,8 @@ class BiaffineSemanticDependencyParser(Parser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):
@@ -283,7 +285,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
+    def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1, verbose=True, **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -292,6 +294,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                 The number of buckets that sentences are assigned to. Default: 32.
             batch_size (int):
                 The number of tokens in each batch. Default: 5000.
+            update_steps (int):
+                Gradient accumulation steps. Default: 1.
             verbose (bool):
                 If ``True``, increases the output verbosity. Default: ``True``.
             kwargs (dict):

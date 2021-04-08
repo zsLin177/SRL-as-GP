@@ -38,14 +38,12 @@ class MatrixTree(nn.Module):
         """
 
         training = scores.requires_grad
-        # double precision to prevent overflows
-        scores = scores.double()
         logZ = self.matrix_tree(scores.requires_grad_(), mask)
         marginals = scores
         # calculate the marginals
         if mbr:
             marginals, = autograd.grad(logZ, marginals, retain_graph=training)
-        marginals = marginals.float()
+        marginals = marginals
 
         if target is None:
             return marginals
@@ -54,7 +52,7 @@ class MatrixTree(nn.Module):
             score = self.matrix_tree(scores, mask, target)
         else:
             score = scores.gather(-1, target.unsqueeze(-1)).squeeze(-1)[mask].sum()
-        loss = (logZ - score).float() / mask.sum()
+        loss = (logZ - score) / mask.sum()
 
         return loss, marginals
 
@@ -73,7 +71,8 @@ class MatrixTree(nn.Module):
             s_arc = s_arc.masked_fill(~cands, float('-inf'))
 
         # A(i, j) = exp(s(i, j))
-        A = torch.exp(s_arc).clamp(torch.finfo().tiny, torch.finfo().max)
+        # double precision to prevent overflows
+        A = torch.exp(s_arc).clamp(torch.finfo().tiny, 1e27).double()
         # Weighted degree matrix
         # D(i, j) = sum_j(A(i, j)), if h == m
         #           0,              otherwise
@@ -83,7 +82,7 @@ class MatrixTree(nn.Module):
         # L(i, j) = D(i, j) - A(i, j)
         L = nn.init.eye_(torch.empty_like(A[0])).repeat(batch_size, 1, 1).masked_scatter_(mask.unsqueeze(-1), (D - A)[mask])
         # Z = L^(0, 0), which is the minor of L w.r.t row 0 and column 0
-        logZ = L[:, 1:, 1:].slogdet()[1].sum()
+        logZ = L[:, 1:, 1:].slogdet()[1].sum().float()
 
         return logZ
 

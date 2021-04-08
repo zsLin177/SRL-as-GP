@@ -31,7 +31,6 @@ setup(
     entry_points={
         'console_scripts': [
             'biaffine-dep=supar.cmds.biaffine_dep:main',
-            'crfnp-dep=supar.cmds.crfnp_dep:main',
             'crf-dep=supar.cmds.crf_dep:main',
             'crf2o-dep=supar.cmds.crf2o_dep:main',
             'crf-con=supar.cmds.crf_con:main',
