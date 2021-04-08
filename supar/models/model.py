@@ -10,7 +10,28 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 class Model(nn.Module):
 
-    def __init__(self, **kwargs):
+    def __init__(self,
+                 n_words,
+                 n_tags=None,
+                 n_chars=None,
+                 n_lemmas=None,
+                 feat=['char'],
+                 n_embed=100,
+                 n_pretrained=100,
+                 n_feat_embed=100,
+                 n_char_embed=50,
+                 n_char_hidden=100,
+                 char_pad_index=0,
+                 char_dropout=0,
+                 bert=None,
+                 n_bert_layers=4,
+                 mix_dropout=.0,
+                 bert_pad_index=0,
+                 embed_dropout=.33,
+                 n_lstm_hidden=400,
+                 n_lstm_layers=3,
+                 encoder_dropout=.33,
+                 **kwargs):
         super().__init__()
 
         self.args = Config().update(locals())
@@ -31,7 +52,8 @@ class Model(nn.Module):
                                            n_embed=self.args.n_char_embed,
                                            n_hidden=self.args.n_char_hidden,
                                            n_out=self.args.n_feat_embed,
-                                           pad_index=self.args.char_pad_index)
+                                           pad_index=self.args.char_pad_index,
+                                           dropout=self.args.char_dropout)
                 self.args.n_input += self.args.n_feat_embed
             if 'lemma' in self.args.feat:
                 self.lemma_embed = nn.Embedding(num_embeddings=self.args.n_lemmas,

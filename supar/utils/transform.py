@@ -243,7 +243,7 @@ class CoNLL(Transform):
 
         Args:
             tokens (list[str] or list[tuple]):
-                This can be either a list of words or word/pos pairs.
+                This can be either a list of words, word/pos pairs or word/lemma/pos triples.
 
         Returns:
             A string in CoNLL-X format.
@@ -256,14 +256,26 @@ class CoNLL(Transform):
             4       tennis  _       _       _       _       _       _       _       _
             5       .       _       _       _       _       _       _       _       _
 
+            >>> print(CoNLL.toconll([('She', 'PRP'), ('enjoys', 'VBZ'), ('playing', 'VBG'), ('tennis', 'NN'), ('.', '.')]))
+            1       She     _       PRP     _       _       _       _       _       _
+            2       enjoys  _       VBZ     _       _       _       _       _       _
+            3       playing _       VBG     _       _       _       _       _       _
+            4       tennis  _       NN      _       _       _       _       _       _
+            5       .       _       .       _       _       _       _       _       _
+
         """
 
         if isinstance(tokens[0], str):
             s = '\n'.join([f"{i}\t{word}\t" + '\t'.join(['_']*8)
                            for i, word in enumerate(tokens, 1)])
-        else:
+        elif len(tokens[0]) == 2:
             s = '\n'.join([f"{i}\t{word}\t_\t{tag}\t" + '\t'.join(['_']*6)
                            for i, (word, tag) in enumerate(tokens, 1)])
+        elif len(tokens[0]) == 3:
+            s = '\n'.join([f"{i}\t{word}\t{lemma}\t{tag}\t" + '\t'.join(['_']*6)
+                           for i, (word, lemma, tag) in enumerate(tokens, 1)])
+        else:
+            raise RuntimeError(f"The input sequence {tokens} is invalid. Only str or word/pos/lemma tuples are support.")
         return s + '\n'
 
     @classmethod

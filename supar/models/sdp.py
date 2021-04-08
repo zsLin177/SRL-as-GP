@@ -53,6 +53,8 @@ class BiaffineSemanticDependencyModel(Model):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .2.
         n_lstm_hidden (int):
@@ -93,10 +95,12 @@ class BiaffineSemanticDependencyModel(Model):
                  n_char_embed=50,
                  n_char_hidden=400,
                  char_pad_index=0,
+                 char_dropout=0.33,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
                  bert_pad_index=0,
+                 freeze=True,
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
@@ -237,6 +241,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .2.
         n_lstm_hidden (int):
@@ -283,12 +289,14 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                  n_pretrained=125,
                  n_feat_embed=100,
                  n_char_embed=50,
-                 n_char_hidden=100,
+                 n_char_hidden=400,
                  char_pad_index=0,
+                 char_dropout=0.33,
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
                  bert_pad_index=0,
+                 freeze=True,
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,

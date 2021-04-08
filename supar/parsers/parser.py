@@ -151,7 +151,7 @@ class Parser(object):
         raise NotImplementedError
 
     @classmethod
-    def load(cls, path, **kwargs):
+    def load(cls, path, reload=False, **kwargs):
         r"""
         Loads a parser with data fields and pretrained model parameters.
 
@@ -160,6 +160,8 @@ class Parser(object):
                 - a string with the shortcut name of a pretrained parser defined in ``supar.MODEL``
                   to load from cache or download, e.g., ``'crf-dep-en'``.
                 - a path to a directory containing a pre-trained parser, e.g., `./<path>/model`.
+            reload (bool):
+                Whether to discard the existing cache and force a fresh download. Default: ``False``.
             kwargs (dict):
                 A dict holding the unconsumed arguments that can be used to update the configurations and initiate the model.
 
@@ -175,6 +177,8 @@ class Parser(object):
         if os.path.exists(path):
             state = torch.load(path)
         else:
+            cached_path = os.path.join(torch.hub.get_dir(), 'checkpoints', os.path.basename(supar.MODEL[path]))
+            os.remove(cached_path) if reload and os.path.exists(cached_path) else None
             state = torch.hub.load_state_dict_from_url(supar.MODEL[path] if path in supar.MODEL else path)
         cls = supar.PARSER[state['name']] if cls.NAME is None else cls
         args = state['args'].update(args)

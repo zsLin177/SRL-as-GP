@@ -52,6 +52,8 @@ class BiaffineDependencyModel(Model):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -249,6 +251,8 @@ class CRFDependencyModel(BiaffineDependencyModel):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -353,6 +357,8 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -390,6 +396,7 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
                  n_bert_layers=4,
                  mix_dropout=.0,
                  bert_pad_index=0,
+                 freeze=True,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,
@@ -572,6 +579,8 @@ class VIDependencyModel(BiaffineDependencyModel):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
+        freeze (bool):
+            If ``True``, freezes bert layers. Default: ``True``.
         embed_dropout (float):
             The dropout ratio of input embeddings. Default: .33.
         n_lstm_hidden (int):
@@ -616,6 +625,7 @@ class VIDependencyModel(BiaffineDependencyModel):
                  n_bert_layers=4,
                  mix_dropout=.0,
                  bert_pad_index=0,
+                 freeze=True,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
                  n_lstm_layers=3,

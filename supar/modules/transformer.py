@@ -19,12 +19,11 @@ class TransformerEmbedding(nn.Module):
             The number of layers from the model to use.
             If 0, uses all layers.
         n_out (int):
-            The requested size of the embeddings.
+            The requested size of the embeddings. Default: 0.
             If 0, uses the size of the pretrained embedding model.
-            Default: 0.
         stride (int):
-            A sequence longer than the limited max length will be splitted into several small pieces
-            with a window size of ``stride``. Default: 5.
+            A sequence longer than max length will be splitted into several small pieces
+            with a window size of ``stride``. Default: 10.
         pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
         dropout (float):
