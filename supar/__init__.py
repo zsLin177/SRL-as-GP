@@ -25,15 +25,23 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              VISemanticDependencyParser]}
 
 MODEL = {
-    'biaffine-dep-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.roberta.zip',
-    'biaffine-dep-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.electra.zip',
-    'crf-con-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.roberta.zip',
-    'crf-con-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.electra.zip',
-    'biaffine-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.lstm.tag-char-lemma.zip',
-    'vi-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.vi.sdp.lstm.tag-char-lemma.zip'
+    'biaffine-dep-lstm-char': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.lstm.char',
+    'biaffine-dep-lstm-char-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.lstm.char',
+    'crf-con-lstm-char': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.lstm.char',
+    'crf-con-lstm-char-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.lstm.char',
+    'biaffine-dep-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.roberta',
+    'biaffine-dep-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.electra',
+    'crf-con-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.roberta',
+    'crf-con-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.electra',
+    'biaffine-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.biaffine.sdp.lstm.tag-char-lemma',
+    'vi-sdp': 'http://hlt.suda.edu.cn/LA/yzhang/supar/dm.vi.sdp.lstm.tag-char-lemma'
 }
 
 CONFIG = {
+    'biaffine-dep-lstm-char': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.lstm.char.ini',
+    'biaffine-dep-lstm-char-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.lstm.char.ini',
+    'crf-con-lstm-char': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.lstm.char.ini',
+    'crf-con-lstm-char-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.crf.con.lstm.char.ini',
     'biaffine-dep-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.biaffine.dep.roberta.ini',
     'biaffine-dep-electra-zh': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ctb7.biaffine.dep.electra.ini',
     'crf-con-roberta': 'http://hlt.suda.edu.cn/LA/yzhang/supar/ptb.crf.con.roberta.ini',

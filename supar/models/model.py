@@ -90,6 +90,7 @@ class Model(nn.Module):
             self.pretrained = nn.Embedding.from_pretrained(embed.to(self.args.device))
             if embed.shape[1] != self.args.n_pretrained:
                 self.embed_proj = nn.Linear(embed.shape[1], self.args.n_pretrained).to(self.args.device)
+            nn.init.zeros_(self.word_embed.weight)
         return self
 
     def forward(self):
