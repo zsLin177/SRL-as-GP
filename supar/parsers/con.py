@@ -140,6 +140,7 @@ class CRFConstituencyParser(Parser):
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
             s_span, s_label = self.model(words, feats)
             loss, _ = self.model.loss(s_span, s_label, charts, mask, self.args.mbr)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -403,6 +404,7 @@ class VIConstituencyParser(CRFConstituencyParser):
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
             s_span, s_pair, s_label = self.model(words, feats)
             loss, _ = self.model.loss(s_span, s_pair, s_label, charts, mask)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:

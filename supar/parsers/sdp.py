@@ -113,6 +113,7 @@ class BiaffineSemanticDependencyParser(Parser):
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -364,6 +365,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:

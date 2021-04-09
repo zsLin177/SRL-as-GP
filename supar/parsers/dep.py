@@ -29,7 +29,7 @@ class BiaffineDependencyParser(Parser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.TEXT, self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        self.WORD, self.TEXT, self.CHAR, self.BERT = self.transform.FORM
         self.TAG = self.transform.CPOS
         self.ARC, self.REL = self.transform.HEAD, self.transform.DEPREL
 
@@ -128,13 +128,14 @@ class BiaffineDependencyParser(Parser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for i, (texts, words, *feats, arcs, rels) in enumerate(bar, 1):
+        for i, (words, texts, *feats, arcs, rels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_rel = self.model(words, feats)
             loss = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.partial)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -158,7 +159,7 @@ class BiaffineDependencyParser(Parser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for texts, words, *feats, arcs, rels in loader:
+        for words, texts, *feats, arcs, rels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -182,7 +183,7 @@ class BiaffineDependencyParser(Parser):
         self.model.eval()
 
         preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
-        for texts, words, *feats in progress_bar(loader):
+        for words, texts, *feats in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -229,7 +230,6 @@ class BiaffineDependencyParser(Parser):
             return parser
 
         logger.info("Building the fields")
-        TEXT = RawField('texts')
         TAG, CHAR, BERT = None, None, None
         if args.encoder != 'lstm':
             from transformers import (AutoTokenizer, GPT2Tokenizer,
@@ -261,9 +261,10 @@ class BiaffineDependencyParser(Parser):
                                     tokenize=t.tokenize,
                                     fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
                 BERT.vocab = t.get_vocab()
+        TEXT = RawField('texts')
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         REL = Field('rels', bos=bos)
-        transform = CoNLL(FORM=(TEXT, WORD, CHAR, BERT), CPOS=TAG, HEAD=ARC, DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), CPOS=TAG, HEAD=ARC, DEPREL=REL)
 
         train = Dataset(transform, args.train)
         if args.encoder == 'lstm':
@@ -287,9 +288,7 @@ class BiaffineDependencyParser(Parser):
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).to(args.device)
-        if args.encoder == 'lstm':
-            model.load_pretrained(WORD.embed)
+        model = cls.MODEL(**args).load_pretrained(WORD.embed if hasattr(WORD, 'embed') else None).to(args.device)
         logger.info(f"{model}\n")
 
         return cls(args, model, transform)
@@ -407,13 +406,14 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for i, (texts, words, *feats, arcs, rels) in enumerate(bar, 1):
+        for i, (words, texts, *feats, arcs, rels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_rel = self.model(words, feats)
             loss, s_arc = self.model.loss(s_arc, s_rel, arcs, rels, mask, self.args.mbr, self.args.partial)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -437,7 +437,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for texts, words, *feats, arcs, rels in loader:
+        for words, texts, *feats, arcs, rels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -461,7 +461,7 @@ class CRFDependencyParser(BiaffineDependencyParser):
         self.model.eval()
 
         preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
-        for texts, words, *feats in progress_bar(loader):
+        for words, texts, *feats in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -594,13 +594,14 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for i, (texts, words, *feats, arcs, sibs, rels) in enumerate(bar, 1):
+        for i, (words, texts, *feats, arcs, sibs, rels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_rel = self.model(words, feats)
             loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, sibs, rels, mask, self.args.mbr, self.args.partial)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -624,7 +625,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for texts, words, *feats, arcs, sibs, rels in loader:
+        for words, texts, *feats, arcs, sibs, rels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -648,7 +649,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
         self.model.eval()
 
         preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
-        for texts, words, *feats in progress_bar(loader):
+        for words, texts, *feats in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -696,7 +697,6 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
             return parser
 
         logger.info("Building the fields")
-        TEXT = RawField('texts')
         TAG, CHAR, BERT = None, None, None
         if args.encoder != 'lstm':
             from transformers import (AutoTokenizer, GPT2Tokenizer,
@@ -728,10 +728,11 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
                                     tokenize=t.tokenize,
                                     fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
                 BERT.vocab = t.get_vocab()
+        TEXT = RawField('texts')
         ARC = Field('arcs', bos=bos, use_vocab=False, fn=CoNLL.get_arcs)
         SIB = ChartField('sibs', bos=bos, use_vocab=False, fn=CoNLL.get_sibs)
         REL = Field('rels', bos=bos)
-        transform = CoNLL(FORM=(TEXT, WORD, CHAR, BERT), CPOS=TAG, HEAD=(ARC, SIB), DEPREL=REL)
+        transform = CoNLL(FORM=(WORD, TEXT, CHAR, BERT), CPOS=TAG, HEAD=(ARC, SIB), DEPREL=REL)
 
         train = Dataset(transform, args.train)
         if args.encoder == 'lstm':
@@ -869,13 +870,14 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         bar, metric = progress_bar(loader), AttachmentMetric()
 
-        for i, (texts, words, *feats, arcs, rels) in enumerate(bar, 1):
+        for i, (words, texts, *feats, arcs, rels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
             mask[:, 0] = 0
             s_arc, s_sib, s_rel = self.model(words, feats)
             loss, s_arc = self.model.loss(s_arc, s_sib, s_rel, arcs, rels, mask)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
@@ -899,7 +901,7 @@ class VIDependencyParser(BiaffineDependencyParser):
 
         total_loss, metric = 0, AttachmentMetric()
 
-        for texts, words, *feats, arcs, rels in loader:
+        for words, texts, *feats, arcs, rels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
@@ -923,7 +925,7 @@ class VIDependencyParser(BiaffineDependencyParser):
         self.model.eval()
 
         preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
-        for texts, words, *feats, arcs, rels in progress_bar(loader):
+        for words, texts, *feats, arcs, rels in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
