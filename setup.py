@@ -20,7 +20,7 @@ setup(
         'Topic :: Text Processing :: Linguistic'
     ],
     setup_requires=[
-        'setuptools>=18.0',
+        'setuptools>=56.0',
     ],
     install_requires=[
         'torch>=1.7.1',

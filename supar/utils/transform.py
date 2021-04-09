@@ -626,13 +626,13 @@ class Tree(Transform):
                 label = equal_labels.get(label, label)
             if len(tree) == 1 and not isinstance(tree[0], nltk.Tree):
                 return (i+1 if label is not None else i), []
-            j, cons = i, []
+            j, spans = i, []
             for child in tree:
                 j, s = track(child, j)
-                cons += s
+                spans += s
             if label is not None and j > i:
-                cons = [(i, j, label)] + cons
-            return j, cons
+                spans = [(i, j, label)] + spans
+            return j, spans
         return track(tree, 0)[1]
 
     @classmethod
