@@ -155,15 +155,13 @@ class BiaffineSemanticDependencyModel(Model):
 
         return s_egde, s_label
 
-    def loss(self, s_egde, s_label, edges, labels, mask):
+    def loss(self, s_egde, s_label, labels, mask):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
-            edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
-                The tensor of gold-standard edges.
             labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard labels.
             mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
@@ -174,8 +172,8 @@ class BiaffineSemanticDependencyModel(Model):
                 The training loss.
         """
 
-        edge_mask = edges.gt(0) & mask
-        edge_loss = self.criterion(s_egde[mask], edges[mask])
+        edge_mask = labels.ge(0) & mask
+        edge_loss = self.criterion(s_egde[mask], edge_mask[mask].long())
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         return self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
 
@@ -188,11 +186,11 @@ class BiaffineSemanticDependencyModel(Model):
                 Scores of all possible labels on each edge.
 
         Returns:
-            ~torch.BoolTensor, ~torch.LongTensor:
-                Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
+            ~torch.BoolTensor:
+                Predicted labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_egde.argmax(-1), s_label.argmax(-1)
+        return s_label.argmax(-1).masked_fill_(s_egde.argmax(-1).lt(1), -1)
 
 
 class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
@@ -374,7 +372,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
 
         return s_egde, s_sib, s_cop, s_grd, s_label
 
-    def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, edges, labels, mask):
+    def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, labels, mask):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -387,8 +385,6 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 Scores of all possible dependent-head-grandparent triples.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
-            edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
-                The tensor of gold-standard edges.
             labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard labels.
             mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
@@ -399,8 +395,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 The training loss.
         """
 
-        edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd), mask, edges)
+        edge_mask = labels.ge(0) & mask
+        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd), mask, edge_mask.long())
         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         loss = self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
         return loss, marginals
@@ -414,8 +410,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 Scores of all possible labels on each edge.
 
         Returns:
-            ~torch.BoolTensor, ~torch.LongTensor:
-                Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
+            ~torch.LongTensor:
+                Predicted labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_egde.gt(0.5), s_label.argmax(-1)
+        return s_label.argmax(-1).masked_fill_(s_egde.lt(0.5), -1)

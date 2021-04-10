@@ -32,7 +32,7 @@ class BiaffineSemanticDependencyParser(Parser):
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.LABEL = self.transform.PHEAD
+        self.LABEL = self.transform.PHEAD
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1, verbose=True, **kwargs):
         r"""
@@ -106,13 +106,13 @@ class BiaffineSemanticDependencyParser(Parser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+        for i, (words, *feats, labels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
-            loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            loss = self.model.loss(s_edge, s_label, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -121,9 +121,8 @@ class BiaffineSemanticDependencyParser(Parser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
         logger.info(f"{bar.postfix}")
 
@@ -133,18 +132,17 @@ class BiaffineSemanticDependencyParser(Parser):
 
         total_loss, metric = 0, ChartMetric()
 
-        for words, *feats, edges, labels in loader:
+        for words, *feats, labels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
-            loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            loss = self.model.loss(s_edge, s_label, labels, mask)
             total_loss += loss.item()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
         total_loss /= len(loader)
 
         return total_loss, metric
@@ -161,9 +159,8 @@ class BiaffineSemanticDependencyParser(Parser):
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
-            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            label_preds = self.model.decode(s_edge, s_label).masked_fill(~mask, -1)
+            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, label_preds))
             if self.args.prob:
                 preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
         preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
@@ -233,9 +230,8 @@ class BiaffineSemanticDependencyParser(Parser):
                                     tokenize=t.tokenize,
                                     fn=None if not isinstance(t, (GPT2Tokenizer, GPT2TokenizerFast)) else lambda x: ' '+x)
                 BERT.vocab = t.get_vocab()
-        EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
+        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=LABEL)
 
         train = Dataset(transform, args.train)
         if args.encoder == 'lstm':
@@ -282,7 +278,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.LABEL = self.transform.PHEAD
+        self.LABEL = self.transform.PHEAD
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1, verbose=True, **kwargs):
         r"""
@@ -356,13 +352,13 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+        for i, (words, *feats, labels) in enumerate(bar, 1):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -371,9 +367,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                 self.scheduler.step()
                 self.optimizer.zero_grad()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
             bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
         logger.info(f"{bar.postfix}")
 
@@ -383,18 +378,17 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         total_loss, metric = 0, ChartMetric()
 
-        for words, *feats, edges, labels in loader:
+        for words, *feats, labels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, labels, mask)
             total_loss += loss.item()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
         total_loss /= len(loader)
 
         return total_loss, metric
@@ -412,9 +406,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds & mask), -1)
-            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            label_preds = self.model.decode(s_edge, s_label).masked_fill(~mask, -1)
+            preds['labels'].extend(chart[1:i, :i].tolist() for i, chart in zip(lens, label_preds))
             if self.args.prob:
                 preds['probs'].extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
         preds['labels'] = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
