@@ -756,9 +756,7 @@ class CRF2oDependencyParser(BiaffineDependencyParser):
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).to(args.device)
-        if args.encoder == 'lstm':
-            model.load_pretrained(WORD.embed)
+        model = cls.MODEL(**args).load_pretrained(WORD.embed if hasattr(WORD, 'embed') else None).to(args.device)
         logger.info(f"{model}\n")
 
         return cls(args, model, transform)
@@ -932,7 +930,7 @@ class VIDependencyParser(BiaffineDependencyParser):
             mask[:, 0] = 0
             lens = mask.sum(1).tolist()
             s_arc, s_sib, s_rel = self.model(words, feats)
-            s_arc = self.model.vi((s_arc, s_sib), mask)
+            s_arc = self.model.inference((s_arc, s_sib), mask)
             arc_preds, rel_preds = self.model.decode(s_arc, s_rel, mask, self.args.tree, self.args.proj)
             preds['arcs'].extend(arc_preds[mask].split(lens))
             preds['rels'].extend(rel_preds[mask].split(lens))

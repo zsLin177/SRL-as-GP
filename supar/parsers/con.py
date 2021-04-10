@@ -287,9 +287,7 @@ class CRFConstituencyParser(Parser):
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).to(args.device)
-        if args.encoder == 'lstm':
-            model.load_pretrained(WORD.embed)
+        model = cls.MODEL(**args).load_pretrained(WORD.embed if hasattr(WORD, 'embed') else None).to(args.device)
         logger.info(f"{model}\n")
 
         return cls(args, model, transform)
@@ -452,7 +450,7 @@ class VIConstituencyParser(CRFConstituencyParser):
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
             lens = mask[:, 0].sum(-1)
             s_span, s_pair, s_label = self.model(words, feats)
-            s_span = self.model.vi((s_span, s_pair), mask)
+            s_span = self.model.inference((s_span, s_pair), mask)
             chart_preds = self.model.decode(s_span, s_label, mask)
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])

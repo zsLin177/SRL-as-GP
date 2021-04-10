@@ -262,9 +262,7 @@ class BiaffineSemanticDependencyParser(Parser):
         logger.info(f"{transform}")
 
         logger.info("Building the model")
-        model = cls.MODEL(**args).to(args.device)
-        if args.encoder == 'lstm':
-            model.load_pretrained(WORD.embed)
+        model = cls.MODEL(**args).load_pretrained(WORD.embed if hasattr(WORD, 'embed') else None).to(args.device)
         logger.info(f"{model}\n")
 
         return cls(args, model, transform)
