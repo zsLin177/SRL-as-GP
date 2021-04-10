@@ -925,7 +925,7 @@ class VIDependencyParser(BiaffineDependencyParser):
         self.model.eval()
 
         preds = {'arcs': [], 'rels': [], 'probs': [] if self.args.prob else None}
-        for words, texts, *feats, arcs, rels in progress_bar(loader):
+        for words, texts, *feats in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             # ignore the first token of each sentence
