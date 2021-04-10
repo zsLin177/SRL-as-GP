@@ -142,9 +142,7 @@ class BiaffineDependencyModel(Model):
         # [batch_size, seq_len, seq_len]
         s_arc = self.arc_attn(arc_d, arc_h)
         # [batch_size, seq_len, seq_len, n_rels]
-        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
-        # set the scores that exceed the length of each sentence to -inf
-        s_arc.masked_fill_(~mask.unsqueeze(1), float('-inf'))
+        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1).masked_fill_(~mask.unsqueeze(1), float('-inf'))
 
         return s_arc, s_rel
 
@@ -457,9 +455,7 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
         # [batch_size, seq_len, seq_len, seq_len]
         s_sib = self.sib_attn(sib_s, sib_d, sib_h).permute(0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, n_rels]
-        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
-        # set the scores that exceed the length of each sentence to -inf
-        s_arc.masked_fill_(~mask.unsqueeze(1), float('-inf'))
+        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1).masked_fill_(~mask.unsqueeze(1), float('-inf'))
 
         return s_arc, s_sib, s_rel
 
@@ -686,11 +682,8 @@ class VIDependencyModel(BiaffineDependencyModel):
         s_arc = self.arc_attn(arc_d, arc_h)
         # [batch_size, seq_len, seq_len, seq_len]
         s_sib = self.sib_attn(sib_s, sib_d, sib_h).permute(0, 3, 1, 2)
-        # [batch_size, seq_len, seq_len, seq_len]
         # [batch_size, seq_len, seq_len, n_rels]
-        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1)
-        # set the scores that exceed the length of each sentence to -inf
-        s_arc.masked_fill_(~mask.unsqueeze(1), float('-inf'))
+        s_rel = self.rel_attn(rel_d, rel_h).permute(0, 2, 3, 1).masked_fill_(~mask.unsqueeze(1), float('-inf'))
 
         return s_arc, s_sib, s_rel
 

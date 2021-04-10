@@ -37,7 +37,7 @@ def init_logger(logger,
     if not handlers:
         handlers = [TqdmHandler()]
         if path:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.makedirs(os.path.dirname(path) or './', exist_ok=True)
             handlers.append(logging.FileHandler(path, mode))
     logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s',
                         datefmt='%Y-%m-%d %H:%M:%S',
