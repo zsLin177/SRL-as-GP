@@ -138,8 +138,7 @@ def chuliu_edmonds(s):
     ChuLiu/Edmonds algorithm for non-projective decoding (:cite:`mcdonald-etal-2005-non`).
 
     Some code is borrowed from `tdozat's implementation`_.
-    Descriptions of notations and formulas can be found in
-    `Non-projective Dependency Parsing using Spanning Tree Algorithms`_.
+    Descriptions of notations and formulas can be found in :cite:`mcdonald-etal-2005-non`.
 
     Notes:
         The algorithm does not guarantee to parse a single-root tree.
