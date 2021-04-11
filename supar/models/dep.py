@@ -50,6 +50,10 @@ class BiaffineDependencyModel(Model):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pooling (str):
+            Pooling way to get token embeddings.
+            Either take the first subtoken ('first'), the last subtoken ('last'), or a mean over all ('mean').
+            Default: 'mean'.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
         freeze (bool):
@@ -91,6 +95,7 @@ class BiaffineDependencyModel(Model):
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pooling='mean',
                  bert_pad_index=0,
                  freeze=True,
                  embed_dropout=.33,
@@ -247,6 +252,10 @@ class CRFDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pooling (str):
+            Pooling way to get token embeddings.
+            Either take the first subtoken ('first'), the last subtoken ('last'), or a mean over all ('mean').
+            Default: 'mean'.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
         freeze (bool):
@@ -353,6 +362,10 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pooling (str):
+            Pooling way to get token embeddings.
+            Either take the first subtoken ('first'), the last subtoken ('last'), or a mean over all ('mean').
+            Default: 'mean'.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
         freeze (bool):
@@ -393,6 +406,7 @@ class CRF2oDependencyModel(BiaffineDependencyModel):
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pooling='mean',
                  bert_pad_index=0,
                  freeze=True,
                  embed_dropout=.33,
@@ -573,6 +587,10 @@ class VIDependencyModel(BiaffineDependencyModel):
             Default: 4.
         mix_dropout (float):
             The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
+        bert_pooling (str):
+            Pooling way to get token embeddings.
+            Either take the first subtoken ('first'), the last subtoken ('last'), or a mean over all ('mean').
+            Default: 'mean'.
         bert_pad_index (int):
             The index of the padding token in the BERT vocabulary. Default: 0.
         freeze (bool):
@@ -620,6 +638,7 @@ class VIDependencyModel(BiaffineDependencyModel):
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pooling='mean',
                  bert_pad_index=0,
                  freeze=True,
                  embed_dropout=.33,

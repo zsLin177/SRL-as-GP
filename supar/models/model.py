@@ -26,6 +26,7 @@ class Model(nn.Module):
                  bert=None,
                  n_bert_layers=4,
                  mix_dropout=.0,
+                 bert_pooling='mean',
                  bert_pad_index=0,
                  embed_dropout=.33,
                  n_lstm_hidden=400,
@@ -63,6 +64,7 @@ class Model(nn.Module):
                 self.bert_embed = TransformerEmbedding(model=self.args.bert,
                                                        n_layers=self.args.n_bert_layers,
                                                        n_out=self.args.n_feat_embed,
+                                                       pooling=bert_pooling,
                                                        pad_index=self.args.bert_pad_index,
                                                        dropout=self.args.mix_dropout,
                                                        requires_grad=(not self.args.freeze))
@@ -79,6 +81,7 @@ class Model(nn.Module):
         else:
             self.encoder = TransformerEmbedding(model=self.args.bert,
                                                 n_layers=self.args.n_bert_layers,
+                                                pooling=bert_pooling,
                                                 pad_index=self.args.pad_index,
                                                 dropout=self.args.mix_dropout,
                                                 requires_grad=True)
