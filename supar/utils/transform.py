@@ -573,7 +573,7 @@ class Tree(Transform):
                         if not isinstance(child[0], nltk.Tree):
                             node[i] = nltk.Tree(f"{node.label()}|<>", [child])
         tree.chomsky_normal_form('left', 0, 0)
-        tree.collapse_unary()
+        tree.collapse_unary(joinChar='::')
 
         return tree
 
@@ -655,7 +655,7 @@ class Tree(Transform):
         Examples:
             >>> tree = Tree.totree(['She', 'enjoys', 'playing', 'tennis', '.'], 'TOP')
             >>> sequence = [(0, 5, 'S'), (0, 4, 'S|<>'), (0, 1, 'NP'), (1, 4, 'VP'), (1, 2, 'VP|<>'),
-                            (2, 4, 'S+VP'), (2, 3, 'VP|<>'), (3, 4, 'NP'), (4, 5, 'S|<>')]
+                            (2, 4, 'S::VP'), (2, 3, 'VP|<>'), (3, 4, 'NP'), (4, 5, 'S|<>')]
             >>> print(Tree.build(tree, sequence))
             (TOP
               (S
@@ -676,7 +676,7 @@ class Tree(Transform):
                 children = track(node) + track(node)
             if label is None or label.endswith('|<>'):
                 return children
-            labels = label.split('+')
+            labels = label.split('::')
             tree = nltk.Tree(labels[-1], children)
             for label in reversed(labels[:-1]):
                 tree = nltk.Tree(label, [tree])
@@ -712,8 +712,6 @@ class Tree(Transform):
 
         i, sentences = 0, []
         for tree in progress_bar(trees):
-            if len(tree) == 1 and not isinstance(tree[0][0], nltk.Tree):
-                continue
             sentences.append(TreeSentence(self, tree))
             i += 1
         if max_len is not None:

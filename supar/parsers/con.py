@@ -134,7 +134,6 @@ class CRFConstituencyParser(Parser):
         bar = progress_bar(loader)
 
         for i, (words, *feats, trees, charts) in enumerate(bar, 1):
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -158,7 +157,6 @@ class CRFConstituencyParser(Parser):
         total_loss, metric = 0, SpanMetric()
 
         for words, *feats, trees, charts in loader:
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -182,7 +180,6 @@ class CRFConstituencyParser(Parser):
 
         preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -194,7 +191,7 @@ class CRFConstituencyParser(Parser):
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span.unbind())])
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span)])
 
         return preds
 
@@ -396,7 +393,6 @@ class VIConstituencyParser(CRFConstituencyParser):
         bar = progress_bar(loader)
 
         for i, (words, *feats, trees, charts) in enumerate(bar, 1):
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -420,7 +416,6 @@ class VIConstituencyParser(CRFConstituencyParser):
         total_loss, metric = 0, SpanMetric()
 
         for words, *feats, trees, charts in loader:
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -444,7 +439,6 @@ class VIConstituencyParser(CRFConstituencyParser):
 
         preds = {'trees': [], 'probs': [] if self.args.prob else None}
         for words, *feats, trees in progress_bar(loader):
-            batch_size, seq_len = words.shape[:2]
             word_mask = words.ne(self.args.pad_index)[:, 1:]
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = (mask.unsqueeze(1) & mask.unsqueeze(2)).triu_(1)
@@ -455,6 +449,6 @@ class VIConstituencyParser(CRFConstituencyParser):
             preds['trees'].extend([Tree.build(tree, [(i, j, self.CHART.vocab[label]) for i, j, label in chart])
                                    for tree, chart in zip(trees, chart_preds)])
             if self.args.prob:
-                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span.unbind())])
+                preds['probs'].extend([prob[:i-1, 1:i].cpu() for i, prob in zip(lens, s_span)])
 
         return preds

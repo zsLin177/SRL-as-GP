@@ -338,7 +338,7 @@ class ChartField(Field):
     Examples:
         >>> chart = [[    None,    'NP',    None,    None,  'S|<>',     'S'],
                      [    None,    None, 'VP|<>',    None,    'VP',    None],
-                     [    None,    None,    None, 'VP|<>',  'S+VP',    None],
+                     [    None,    None,    None, 'VP|<>', 'S::VP',    None],
                      [    None,    None,    None,    None,    'NP',    None],
                      [    None,    None,    None,    None,    None,  'S|<>'],
                      [    None,    None,    None,    None,    None,    None]]
