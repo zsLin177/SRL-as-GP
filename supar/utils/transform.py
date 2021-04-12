@@ -555,7 +555,7 @@ class Tree(Transform):
                   (NP (_ She))
                   (VP
                     (VP|<> (_ enjoys))
-                    (S+VP (VP|<> (_ playing)) (NP (_ tennis)))))
+                    (S::VP (VP|<> (_ playing)) (NP (_ tennis)))))
                 (S|<> (_ .))))
 
         .. _Chomsky Normal Form (CNF):
@@ -563,6 +563,8 @@ class Tree(Transform):
         """
 
         tree = tree.copy(True)
+        if len(tree) == 1 and not isinstance(tree[0][0], nltk.Tree):
+            tree[0] = nltk.Tree(f"{tree.label()}|<>", [tree[0]])
         nodes = [tree]
         while nodes:
             node = nodes.pop()
