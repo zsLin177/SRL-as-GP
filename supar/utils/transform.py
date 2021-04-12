@@ -700,7 +700,7 @@ class Tree(Transform):
         """
         if isinstance(data, str) and os.path.exists(data):
             with open(data, 'r') as f:
-                trees = [nltk.Tree.fromstring(string) for string in f]
+                trees = [nltk.Tree.fromstring(s) for s in f]
             self.root = trees[0].label()
         else:
             if lang is not None:
