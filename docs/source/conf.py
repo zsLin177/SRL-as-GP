@@ -100,3 +100,6 @@ intersphinx_mapping = {
 }
 
 autodoc_member_order = 'bysource'
+
+# bibtex
+bibtex_bibfiles = ['refs.bib']
