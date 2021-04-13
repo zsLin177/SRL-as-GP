@@ -38,7 +38,7 @@ Indices and tables
     :target: https://parser.readthedocs.io/en/latest
 .. |release| image:: https://img.shields.io/pypi/v/supar
     :alt: release
-    :target: https://yzhangcs/parser/releases
+    :target: https://github.com/yzhangcs/parser/releases
 .. |downloads| image:: https://pepy.tech/badge/supar
     :alt: downloads
     :target: https://pepy.tech/project/supar
