@@ -9,6 +9,7 @@ import torch
 import torch.distributed as dist
 from supar.utils import Config, Dataset
 from supar.utils.field import Field
+from supar.utils.fn import download
 from supar.utils.logging import init_logger, logger
 from supar.utils.metric import Metric
 from supar.utils.parallel import DistributedDataParallel as DDP
@@ -174,13 +175,7 @@ class Parser(object):
 
         args = Config(**locals())
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-        if os.path.exists(path):
-            state = torch.load(path)
-        else:
-            cached_path = os.path.join(torch.hub.get_dir(), 'checkpoints', os.path.basename(supar.MODEL[path]))
-            os.remove(cached_path) if reload and os.path.exists(cached_path) else None
-            state = torch.hub.load_state_dict_from_url(supar.MODEL[path] if path in supar.MODEL else path)
+        state = torch.load(path if os.path.exists(path) else download(supar.MODEL.get(path, path), reload=reload))
         cls = supar.PARSER[state['name']] if cls.NAME is None else cls
         args = state['args'].update(args)
         model = cls.MODEL(**args)

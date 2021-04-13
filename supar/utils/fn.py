@@ -1,6 +1,12 @@
 # -*- coding: utf-8 -*-
 
+import os
+import sys
 import unicodedata
+import urllib
+import zipfile
+
+import torch
 
 
 def ispunct(token):
@@ -75,3 +81,24 @@ def pad(tensors, padding_value=0, total_length=None, padding_side='right'):
     for i, tensor in enumerate(tensors):
         out_tensor[i][[slice(-i, None) if padding_side == 'left' else slice(0, i) for i in tensor.size()]] = tensor
     return out_tensor
+
+
+def download(url, reload=False):
+    path = os.path.join(os.path.expanduser('~/.cache/supar'), os.path.basename(urllib.parse.urlparse(url).path))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if reload:
+        os.remove(path) if os.path.exists(path) else None
+    if not os.path.exists(path):
+        sys.stderr.write(f"Downloading: {url} to {path}\n")
+        try:
+            torch.hub.download_url_to_file(url, path, progress=True)
+        except urllib.error.URLError:
+            raise RuntimeError(f"File {url} unavailable. Please try other sources.")
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as f:
+            members = f.infolist()
+            if len(members) != 1:
+                raise RuntimeError('Only one file(not dir) is allowed in the zipfile.')
+            f.extractall(os.path.dirname(path))
+        path = os.path.join(os.path.dirname(path), members[0].filename)
+    return path

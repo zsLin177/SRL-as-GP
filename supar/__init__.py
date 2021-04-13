@@ -24,7 +24,8 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              BiaffineSemanticDependencyParser,
                                              VISemanticDependencyParser]}
 
-SOURCE = 'http://hlt.suda.edu.cn/LA/yzhang/supar'
+SRC = 'http://hlt.suda.edu.cn/LA/yzhang/supar'
+
 NAME = {
     'biaffine-dep-en': 'ptb.biaffine.dep.lstm.char',
     'biaffine-dep-zh': 'ctb7.biaffine.dep.lstm.char',
@@ -44,5 +45,5 @@ NAME = {
     'vi-sdp-en': 'dm.vi.sdp.lstm.tag-char-lemma'
 }
 
-MODEL = {n: f'{SOURCE}/v{__version__}/{m}' for n, m in NAME.items()}
-CONFIG = {n: f'{SOURCE}/v{__version__}/{m}.ini' for n, m in NAME.items()}
+MODEL = {n: f'{SRC}/v{__version__}/{m}.zip' for n, m in NAME.items()}
+CONFIG = {n: f'{SRC}/v{__version__}/{m}.ini' for n, m in NAME.items()}

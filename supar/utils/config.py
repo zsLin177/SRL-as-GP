@@ -6,7 +6,7 @@ from ast import literal_eval
 from configparser import ConfigParser
 
 import supar
-import torch
+from supar.utils.fn import download
 
 
 class Config(object):
@@ -56,15 +56,9 @@ class Config(object):
         return self.__dict__.pop(key, val)
 
     @classmethod
-    def load(cls, conf=None, unknown=None, **kwargs):
+    def load(cls, conf='', unknown=None, **kwargs):
         config = ConfigParser()
-        if conf is not None:
-            if conf in supar.CONFIG:
-                url = supar.CONFIG[conf]
-                conf = os.path.join(torch.hub.get_dir(), 'checkpoints', os.path.basename(url))
-                if not os.path.exists(conf):
-                    torch.hub.download_url_to_file(url, conf)
-        config.read(conf or [])
+        config.read(conf if not conf or os.path.exists(conf) else download(supar.CONFIG.get(conf, conf)))
         config = dict((name, literal_eval(value))
                       for section in config.sections()
                       for name, value in config.items(section))
