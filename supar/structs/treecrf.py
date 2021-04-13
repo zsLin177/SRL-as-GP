@@ -38,12 +38,13 @@ class MatrixTree(nn.Module):
         """
 
         training = scores.requires_grad
+        scores = scores.double()
         logZ = self.matrix_tree(scores.requires_grad_(), mask)
         marginals = scores
         # calculate the marginals
         if mbr:
             marginals, = autograd.grad(logZ, marginals, retain_graph=training)
-        marginals = marginals
+        marginals = marginals.float()
 
         if target is None:
             return marginals
@@ -72,7 +73,7 @@ class MatrixTree(nn.Module):
 
         # A(i, j) = exp(s(i, j))
         # double precision to prevent overflows
-        A = torch.exp(s_arc).clamp(torch.finfo().tiny, 1e27).double()
+        A = torch.exp(s_arc)
         # Weighted degree matrix
         # D(i, j) = sum_j(A(i, j)), if h == m
         #           0,              otherwise
@@ -80,9 +81,10 @@ class MatrixTree(nn.Module):
         D.diagonal(0, 1, 2).copy_(A.sum(-1))
         # Laplacian matrix
         # L(i, j) = D(i, j) - A(i, j)
-        L = nn.init.eye_(torch.empty_like(A[0])).repeat(batch_size, 1, 1).masked_scatter_(mask.unsqueeze(-1), (D - A)[mask])
+        L = nn.init.eye_(torch.empty_like(A[0])).repeat(batch_size, 1, 1)
+        L = L.masked_scatter_(mask.unsqueeze(-1), (D - A)[mask]).clamp(torch.finfo().tiny)
         # Z = L^(0, 0), which is the minor of L w.r.t row 0 and column 0
-        logZ = L[:, 1:, 1:].slogdet()[1].sum().float()
+        logZ = L[:, 1:, 1:].logdet().sum()
 
         return logZ
 
