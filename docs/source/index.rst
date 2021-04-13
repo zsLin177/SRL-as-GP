@@ -6,7 +6,7 @@
 SuPar
 ===============================================================================
 
-|build| |docs| |release| |downloads| |coverage| |LICENSE|
+|build| |docs| |release| |downloads| |LICENSE|
 
 
 :mod:`SuPar` is a package that provides a collection of state-of-the-art syntactic/semantic parsing models.
@@ -42,9 +42,6 @@ Indices and tables
 .. |downloads| image:: https://pepy.tech/badge/supar
     :alt: downloads
     :target: https://pepy.tech/project/supar
-.. |coverage| image:: https://coveralls.io/repos/github/yzhangcs/parser/badge.svg?branch=main
-    :alt: coverage
-    :target: https://coveralls.io/github/yzhangcs/parser?branch=main
 .. |LICENSE| image:: https://img.shields.io/github/license/yzhangcs/parser
     :alt: LICENSE
     :target: https://github.com/yzhangcs/parser/blob/master/LICENSE

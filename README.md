@@ -4,7 +4,6 @@
 [![docs](https://readthedocs.org/projects/parser/badge/?version=latest)](https://parser.readthedocs.io/en/latest)
 [![release](https://img.shields.io/github/v/release/yzhangcs/parser)](https://yzhangcs/parser/releases)
 [![downloads](https://pepy.tech/badge/supar)](https://pepy.tech/project/supar)
-[![coverage](https://coveralls.io/repos/github/yzhangcs/parser/badge.svg?branch=main)](https://coveralls.io/github/yzhangcs/parser?branch=main)
 [![LICENSE](https://img.shields.io/github/license/yzhangcs/parser)](https://github.com/yzhangcs/parser/blob/master/LICENSE)
 
 `SuPar` provides a collection of state-of-the-art syntactic/semantic parsing models:
