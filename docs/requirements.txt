@@ -1,4 +1,4 @@
 sphinx
 sphinx-astrorefs
 sphinx-book-theme
-sphinxcontrib-bibtex<2.0.0
+sphinxcontrib-bibtex
