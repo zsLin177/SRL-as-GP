@@ -20,7 +20,6 @@ class RawField(object):
         fn (function):
             The function used for preprocessing the examples. Default: ``None``.
     """
-
     def __init__(self, name, fn=None):
         self.name = name
         self.fn = fn
@@ -69,9 +68,16 @@ class Field(RawField):
         fn (function):
             The function used for preprocessing the examples. Default: ``None``.
     """
-
-    def __init__(self, name, pad=None, unk=None, bos=None, eos=None,
-                 lower=False, use_vocab=True, tokenize=None, fn=None):
+    def __init__(self,
+                 name,
+                 pad=None,
+                 unk=None,
+                 bos=None,
+                 eos=None,
+                 lower=False,
+                 use_vocab=True,
+                 tokenize=None,
+                 fn=None):
         self.name = name
         self.pad = pad
         self.unk = unk
@@ -82,7 +88,9 @@ class Field(RawField):
         self.tokenize = tokenize
         self.fn = fn
 
-        self.specials = [token for token in [pad, unk, bos, eos] if token is not None]
+        self.specials = [
+            token for token in [pad, unk, bos, eos] if token is not None
+        ]
 
     def __repr__(self):
         s, params = f"({self.name}): {self.__class__.__name__}(", []
@@ -108,15 +116,18 @@ class Field(RawField):
         if self.tokenize is None:
             state['tokenize_args'] = None
         elif self.tokenize.__module__.startswith('transformers'):
-            state['tokenize_args'] = (self.tokenize.__module__, self.tokenize.__self__.name_or_path)
+            state['tokenize_args'] = (self.tokenize.__module__,
+                                      self.tokenize.__self__.name_or_path)
             state['tokenize'] = None
         return state
 
     def __setstate__(self, state):
         tokenize_args = state.pop('tokenize_args', None)
-        if tokenize_args is not None and tokenize_args[0].startswith('transformers'):
+        if tokenize_args is not None and tokenize_args[0].startswith(
+                'transformers'):
             from transformers import AutoTokenizer
-            state['tokenize'] = AutoTokenizer.from_pretrained(tokenize_args[1]).tokenize
+            state['tokenize'] = AutoTokenizer.from_pretrained(
+                tokenize_args[1]).tokenize
         self.__dict__.update(state)
 
     @property
@@ -192,8 +203,7 @@ class Field(RawField):
         if hasattr(self, 'vocab'):
             return
         sequences = getattr(dataset, self.name)
-        counter = Counter(token
-                          for seq in sequences
+        counter = Counter(token for seq in sequences
                           for token in self.preprocess(seq))
         self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
 
@@ -284,7 +294,6 @@ class SubwordField(Field):
                 [22559,  2734,     0],
                 [  102,     0,     0]])
     """
-
     def __init__(self, *args, **kwargs):
         self.fix_len = kwargs.pop('fix_len') if 'fix_len' in kwargs else 0
         super().__init__(*args, **kwargs)
@@ -293,9 +302,7 @@ class SubwordField(Field):
         if hasattr(self, 'vocab'):
             return
         sequences = getattr(dataset, self.name)
-        counter = Counter(piece
-                          for seq in sequences
-                          for token in seq
+        counter = Counter(piece for seq in sequences for token in seq
                           for piece in self.preprocess(token))
         self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
 
@@ -316,17 +323,26 @@ class SubwordField(Field):
         sequences = [[self.preprocess(token) for token in seq]
                      for seq in sequences]
         if self.fix_len <= 0:
-            self.fix_len = max(len(token) for seq in sequences for token in seq)
+            self.fix_len = max(
+                len(token) for seq in sequences for token in seq)
         if self.use_vocab:
-            sequences = [[[self.vocab[i] if i in self.vocab else self.unk_index for i in token] if token else [self.unk_index]
-                          for token in seq] for seq in sequences]
+            sequences = [[[
+                self.vocab[i] if i in self.vocab else self.unk_index
+                for i in token
+            ] if token else [self.unk_index] for token in seq]
+                         for seq in sequences]
         if self.bos:
             sequences = [[[self.bos_index]] + seq for seq in sequences]
         if self.eos:
             sequences = [seq + [[self.eos_index]] for seq in sequences]
-        lens = [min(self.fix_len, max(len(ids) for ids in seq)) for seq in sequences]
-        sequences = [pad([torch.tensor(ids[:i]) for ids in seq], self.pad_index, i)
-                     for i, seq in zip(lens, sequences)]
+        lens = [
+            min(self.fix_len, max(len(ids) for ids in seq))
+            for seq in sequences
+        ]
+        sequences = [
+            pad([torch.tensor(ids[:i]) for ids in seq], self.pad_index, i)
+            for i, seq in zip(lens, sequences)
+        ]
 
         return sequences
 
@@ -350,22 +366,24 @@ class ChartField(Field):
                 [ -1,  -1,  -1,  -1,  -1, 107],
                 [ -1,  -1,  -1,  -1,  -1,  -1]])
     """
-
     def build(self, dataset, min_freq=1):
-        counter = Counter(i
-                          for chart in getattr(dataset, self.name)
-                          for row in self.preprocess(chart)
-                          for i in row if i is not None)
+        counter = Counter(i for chart in getattr(dataset, self.name)
+                          for row in self.preprocess(chart) for i in row
+                          if i is not None)
 
         self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
 
     def transform(self, charts):
         charts = [self.preprocess(chart) for chart in charts]
         if self.use_vocab:
-            charts = [[[self.vocab[i] if i is not None else -1 for i in row] for row in chart] for chart in charts]
+            charts = [[[self.vocab[i] if i is not None else -1 for i in row]
+                       for row in chart] for chart in charts]
         if self.bos:
-            charts = [[[self.bos_index]*len(chart[0])] + chart for chart in charts]
+            charts = [[[self.bos_index] * len(chart[0])] + chart
+                      for chart in charts]
         if self.eos:
-            charts = [chart + [[self.eos_index]*len(chart[0])] for chart in charts]
+            charts = [
+                chart + [[self.eos_index] * len(chart[0])] for chart in charts
+            ]
         charts = [torch.tensor(chart) for chart in charts]
         return charts

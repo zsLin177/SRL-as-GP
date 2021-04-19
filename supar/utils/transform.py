@@ -98,6 +98,7 @@ class Sentence(object):
             for f in field:
                 if f is not None:
                     self.maps[f.name] = i
+                    # 具体看conll transform的fields顺序
                     self.keys.add(f.name)
 
     def __len__(self):

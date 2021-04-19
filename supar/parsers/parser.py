@@ -42,6 +42,7 @@ class Parser(object):
         dev.build(args.batch_size, args.buckets)
         test.build(args.batch_size, args.buckets)
         logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
+        # logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n")
 
         if dist.is_initialized():
             self.model = DDP(self.model, device_ids=[args.local_rank], find_unused_parameters=True)
@@ -54,10 +55,15 @@ class Parser(object):
 
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
-            loss, dev_metric = self._evaluate(dev.loader)
-            logger.info(f"{'dev:':5} loss: {loss:.4f} - {dev_metric}")
-            loss, test_metric = self._evaluate(test.loader)
-            logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
+            # loss, dev_metric = self._evaluate(dev.loader)
+            dev_metric = self._evaluate(dev.loader)
+            logger.info(f"{'dev:':5} - {dev_metric}")
+
+            # loss, test_metric = self._evaluate(test.loader)
+            # logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
+
+            test_metric = self._evaluate(test.loader)
+            logger.info(f"{'test:':5} - {test_metric}")
 
             t = datetime.now() - start
             # save the model if it is the best so far
@@ -71,7 +77,9 @@ class Parser(object):
             elapsed += t
             if epoch - best_e >= args.patience:
                 break
-        loss, metric = self.load(**args)._evaluate(test.loader)
+        # loss, metric = self.load(**args)._evaluate(test.loader)
+        metric = self.load(**args)._evaluate(test.loader)
+        # metric = self.load(**args)._evaluate(dev.loader)
 
         logger.info(f"Epoch {best_e} saved")
         logger.info(f"{'dev:':5} {best_metric}")

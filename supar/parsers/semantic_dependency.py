@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-
+import pdb
 import torch
 import torch.nn as nn
 from supar.models import (BiaffineSemanticDependencyModel,
@@ -42,7 +42,14 @@ class BiaffineSemanticDependencyParser(Parser):
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
+    def train(self,
+              train,
+              dev,
+              test,
+              buckets=32,
+              batch_size=5000,
+              verbose=True,
+              **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -59,7 +66,12 @@ class BiaffineSemanticDependencyParser(Parser):
 
         return super().train(**Config().update(locals()))
 
-    def evaluate(self, data, buckets=8, batch_size=5000, verbose=True, **kwargs):
+    def evaluate(self,
+                 data,
+                 buckets=8,
+                 batch_size=5000,
+                 verbose=True,
+                 **kwargs):
         r"""
         Args:
             data (str):
@@ -79,7 +91,14 @@ class BiaffineSemanticDependencyParser(Parser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, verbose=True, **kwargs):
+    def predict(self,
+                data,
+                pred=None,
+                lang='en',
+                buckets=8,
+                batch_size=5000,
+                verbose=True,
+                **kwargs):
         r"""
         Args:
             data (list[list] or str):
@@ -128,7 +147,9 @@ class BiaffineSemanticDependencyParser(Parser):
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
-            bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+            bar.set_postfix_str(
+                f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
+            )
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -141,15 +162,16 @@ class BiaffineSemanticDependencyParser(Parser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_label = self.model(words, feats)
-            loss = self.model.loss(s_edge, s_label, edges, labels, mask)
-            total_loss += loss.item()
+            # loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            # total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
-        total_loss /= len(loader)
+        # total_loss /= len(loader)
 
-        return total_loss, metric
+        # return total_loss, metric
+        return metric
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -164,12 +186,21 @@ class BiaffineSemanticDependencyParser(Parser):
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
-            charts.extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
+                                                  -1)
+            charts.extend(chart[1:i, :i].tolist()
+                          for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
-                probs.extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
-        charts = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
-                  for chart in charts]
+                probs.extend([
+                    prob[1:i, :i].cpu()
+                    for i, prob in zip(lens,
+                                       s_edge.softmax(-1).unbind())
+                ])
+        charts = [
+            CoNLL.build_relations(
+                [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
+                 for row in chart]) for chart in charts
+        ]
         preds = {'labels': charts}
         if self.args.prob:
             preds['probs'] = probs
@@ -179,8 +210,13 @@ class BiaffineSemanticDependencyParser(Parser):
     @classmethod
     def build(cls,
               path,
-              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12, 'weight_decay': 3e-9},
-              scheduler_args={'gamma': .75**(1/5000)},
+              optimizer_args={
+                  'lr': 1e-3,
+                  'betas': (.0, .95),
+                  'eps': 1e-12,
+                  'weight_decay': 3e-9
+              },
+              scheduler_args={'gamma': .75**(1 / 5000)},
               min_freq=7,
               fix_len=20,
               **kwargs):
@@ -205,6 +241,7 @@ class BiaffineSemanticDependencyParser(Parser):
         """
 
         args = Config(**locals())
+        interpolation = args.itp
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path) and not args.build:
@@ -219,7 +256,11 @@ class BiaffineSemanticDependencyParser(Parser):
         if 'tag' in args.feat:
             TAG = Field('tags', bos=bos)
         if 'char' in args.feat:
-            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
+            CHAR = SubwordField('chars',
+                                pad=pad,
+                                unk=unk,
+                                bos=bos,
+                                fix_len=args.fix_len)
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
@@ -229,17 +270,20 @@ class BiaffineSemanticDependencyParser(Parser):
                                 pad=tokenizer.pad_token,
                                 unk=tokenizer.unk_token,
                                 bos=tokenizer.bos_token or tokenizer.cls_token,
-                                eos=tokenizer.eos_token or tokenizer.sep_token,
                                 fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                                tokenize=tokenizer.tokenize)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
+        transform = CoNLL(FORM=(WORD, CHAR, BERT),
+                          LEMMA=LEMMA,
+                          POS=TAG,
+                          PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+        WORD.build(
+            train, args.min_freq,
+            (Embedding.load(args.embed, args.unk) if args.embed else None))
         if TAG is not None:
             TAG.build(train)
         if CHAR is not None:
@@ -256,7 +300,8 @@ class BiaffineSemanticDependencyParser(Parser):
             'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'pad_index': WORD.pad_index,
-            'unk_index': WORD.unk_index
+            'unk_index': WORD.unk_index,
+            'interpolation': interpolation
         })
         logger.info(f"{transform}")
 
@@ -293,7 +338,14 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, verbose=True, **kwargs):
+    def train(self,
+              train,
+              dev,
+              test,
+              buckets=32,
+              batch_size=5000,
+              verbose=True,
+              **kwargs):
         r"""
         Args:
             train/dev/test (list[list] or str):
@@ -310,7 +362,12 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         return super().train(**Config().update(locals()))
 
-    def evaluate(self, data, buckets=8, batch_size=5000, verbose=True, **kwargs):
+    def evaluate(self,
+                 data,
+                 buckets=8,
+                 batch_size=5000,
+                 verbose=True,
+                 **kwargs):
         r"""
         Args:
             data (str):
@@ -330,7 +387,14 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         return super().evaluate(**Config().update(locals()))
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, verbose=True, **kwargs):
+    def predict(self,
+                data,
+                pred=None,
+                lang='en',
+                buckets=8,
+                batch_size=5000,
+                verbose=True,
+                **kwargs):
         r"""
         Args:
             data (list[list] or str):
@@ -370,7 +434,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
@@ -379,7 +444,9 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
-            bar.set_postfix_str(f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}")
+            bar.set_postfix_str(
+                f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
+            )
 
     @torch.no_grad()
     def _evaluate(self, loader):
@@ -392,7 +459,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           s_label, edges, labels, mask)
             total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -416,12 +484,21 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
-            charts.extend(chart[1:i, :i].tolist() for i, chart in zip(lens, chart_preds.unbind()))
+            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
+                                                  -1)
+            charts.extend(chart[1:i, :i].tolist()
+                          for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
-                probs.extend([prob[1:i, :i].cpu() for i, prob in zip(lens, s_edge.softmax(-1).unbind())])
-        charts = [CoNLL.build_relations([[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in chart])
-                  for chart in charts]
+                probs.extend([
+                    prob[1:i, :i].cpu()
+                    for i, prob in zip(lens,
+                                       s_edge.softmax(-1).unbind())
+                ])
+        charts = [
+            CoNLL.build_relations(
+                [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
+                 for row in chart]) for chart in charts
+        ]
         preds = {'labels': charts}
         if self.args.prob:
             preds['probs'] = probs
@@ -431,8 +508,12 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
     @classmethod
     def build(cls,
               path,
-              optimizer_args={'lr': 1e-3, 'betas': (.0, .95), 'eps': 1e-12},
-              scheduler_args={'gamma': .75**(1/5000)},
+              optimizer_args={
+                  'lr': 1e-3,
+                  'betas': (.0, .95),
+                  'eps': 1e-12
+              },
+              scheduler_args={'gamma': .75**(1 / 5000)},
               min_freq=7,
               fix_len=20,
               **kwargs):
@@ -471,27 +552,39 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         if 'tag' in args.feat:
             TAG = Field('tags', bos=bos)
         if 'char' in args.feat:
-            CHAR = SubwordField('chars', pad=pad, unk=unk, bos=bos, fix_len=args.fix_len)
+            CHAR = SubwordField('chars',
+                                pad=pad,
+                                unk=unk,
+                                bos=bos,
+                                fix_len=args.fix_len)
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
             from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            BERT = SubwordField('bert',
-                                pad=tokenizer.pad_token,
-                                unk=tokenizer.unk_token,
-                                bos=tokenizer.bos_token or tokenizer.cls_token,
-                                eos=tokenizer.eos_token or tokenizer.sep_token,
-                                fix_len=args.fix_len,
-                                tokenize=tokenizer.tokenize,
-                                fn=lambda x: ' '+x if isinstance(tokenizer, (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+            BERT = SubwordField(
+                'bert',
+                pad=tokenizer.pad_token,
+                unk=tokenizer.unk_token,
+                bos=tokenizer.bos_token or tokenizer.cls_token,
+                eos=tokenizer.eos_token or tokenizer.sep_token,
+                fix_len=args.fix_len,
+                tokenize=tokenizer.tokenize,
+                fn=lambda x: ' ' + x
+                if isinstance(tokenizer,
+                              (GPT2Tokenizer, GPT2TokenizerFast)) else None)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT), LEMMA=LEMMA, POS=TAG, PHEAD=(EDGE, LABEL))
+        transform = CoNLL(FORM=(WORD, CHAR, BERT),
+                          LEMMA=LEMMA,
+                          POS=TAG,
+                          PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
-        WORD.build(train, args.min_freq, (Embedding.load(args.embed, args.unk) if args.embed else None))
+        WORD.build(
+            train, args.min_freq,
+            (Embedding.load(args.embed, args.unk) if args.embed else None))
         if TAG is not None:
             TAG.build(train)
         if CHAR is not None:
