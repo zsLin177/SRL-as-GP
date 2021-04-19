@@ -122,10 +122,10 @@ class BiaffineSemanticDependencyModel(nn.Module):
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
-        self.embed_proj = nn.Linear(n_embed, n_embed_proj)
+        # self.embed_proj = nn.Linear(n_embed, n_embed_proj)
 
-        self.n_input = n_embed + n_embed_proj
-        # self.n_input = n_embed
+        # self.n_input = n_embed + n_embed_proj
+        self.n_input = n_embed
 
         if 'tag' in feat:
             self.tag_embed = nn.Embedding(num_embeddings=n_tags,
@@ -224,9 +224,9 @@ class BiaffineSemanticDependencyModel(nn.Module):
         # get outputs from embedding layers
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
-            word_embed = torch.cat(
-                (word_embed, self.embed_proj(self.pretrained(words))), -1)
-            # word_embed += self.pretrained(words)
+            # word_embed = torch.cat(
+            #     (word_embed, self.embed_proj(self.pretrained(words))), -1)
+            word_embed += self.pretrained(words)
 
         feat_embeds = []
         if 'tag' in self.args.feat:
