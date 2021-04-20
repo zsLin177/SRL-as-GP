@@ -459,16 +459,19 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+            #                                s_label, edges, labels, mask)
             loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            s_label, edges, labels, mask)
-            total_loss += loss.item()
+            # total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
-        total_loss /= len(loader)
+        # total_loss /= len(loader)
 
-        return total_loss, metric
+        # return total_loss, metric
+        return metric
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -567,12 +570,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                 pad=tokenizer.pad_token,
                 unk=tokenizer.unk_token,
                 bos=tokenizer.bos_token or tokenizer.cls_token,
-                eos=tokenizer.eos_token or tokenizer.sep_token,
                 fix_len=args.fix_len,
-                tokenize=tokenizer.tokenize,
-                fn=lambda x: ' ' + x
-                if isinstance(tokenizer,
-                              (GPT2Tokenizer, GPT2TokenizerFast)) else None)
+                tokenize=tokenizer.tokenize)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
