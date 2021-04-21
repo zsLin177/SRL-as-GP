@@ -612,10 +612,14 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         edge_mask = edges.gt(0) & mask
         edge_loss, marginals = self.vi((s_egde, s_sib, s_cop, s_grd), mask,
                                        edges)
-        label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-        loss = self.interpolation * label_loss + (
-            1 - self.interpolation) * edge_loss
-        return loss, marginals
+        # print(s_label[edge_mask].shape, labels[edge_mask].shape)
+        if(edge_mask.any()):
+            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            loss = self.interpolation * label_loss + (
+                1 - self.interpolation) * edge_loss
+            return loss, marginals
+        else:
+            return edge_loss, marginals
 
     def decode(self, s_egde, s_label):
         r"""

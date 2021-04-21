@@ -600,7 +600,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             'n_lemmas': len(LEMMA.vocab) if LEMMA is not None else None,
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'pad_index': WORD.pad_index,
-            'unk_index': WORD.unk_index
+            'unk_index': WORD.unk_index,
+            'interpolation': args.itp
         })
         logger.info(f"{transform}")
 
