@@ -77,6 +77,94 @@ class AttachmentMetric(Metric):
         return self.correct_rels / (self.total + self.eps)
 
 
+class SrlMetric(Metric):
+
+    def __init__(self, eps=1e-5):
+        super(SrlMetric, self).__init__()
+
+        self.tp = 0.0
+        self.utp = 0.0
+        self.pred = 0.0
+        self.gold = 0.0
+        self.p_tp = 0.0
+        self.p_utp = 0.0
+        self.p_pred = 0.0
+        self.p_gold = 0.0
+        self.eps = eps
+
+    def __call__(self, preds, golds):
+        pred_mask = preds.ge(0)
+        gold_mask = golds.ge(0)
+        span_mask = pred_mask & gold_mask
+        self.pred += pred_mask.sum().item()
+        self.gold += gold_mask.sum().item()
+        self.tp += (preds.eq(golds) & span_mask).sum().item()
+        self.utp += span_mask.sum().item()
+
+        # compute predicate accuracy
+        self.p_pred += pred_mask[...,0].sum().item()
+        self.p_gold += gold_mask[...,0].sum().item()
+        self.p_utp += span_mask[...,0].sum().item()
+        self.p_tp += (preds.eq(golds) & span_mask)[...,0].sum().item()
+
+        return self
+
+    def __repr__(self):
+        return f"UP: {self.up:6.2%} UR: {self.ur:6.2%} UF: {self.uf:6.2%} P: {self.p:6.2%} R: {self.r:6.2%} F: {self.f:6.2%} UPF: {self.p_uf:6.2%} PF: {self.p_f:6.2%}"
+
+    @property
+    def score(self):
+        return self.f
+
+    @property
+    def p_up(self):
+        return self.p_utp / (self.p_pred + self.eps)
+
+    @property
+    def p_ur(self):
+        return self.p_utp / (self.p_gold + self.eps)
+
+    @property
+    def p_uf(self):
+        return 2 * self.p_utp / (self.p_pred + self.p_gold + self.eps)
+
+    @property
+    def p_p(self):
+        return self.p_tp / (self.p_pred + self.eps)
+    
+    @property
+    def p_r(self):
+        return self.p_tp / (self.p_gold + self.eps)
+
+    @property
+    def p_f(self):
+        return 2 * self.p_tp / (self.p_pred + self.p_gold + self.eps)
+
+    @property
+    def up(self):
+        return self.utp / (self.pred + self.eps)
+
+    @property
+    def ur(self):
+        return self.utp / (self.gold + self.eps)
+
+    @property
+    def uf(self):
+        return 2 * self.utp / (self.pred + self.gold + self.eps)
+
+    @property
+    def p(self):
+        return self.tp / (self.pred + self.eps)
+
+    @property
+    def r(self):
+        return self.tp / (self.gold + self.eps)
+
+    @property
+    def f(self):
+        return 2 * self.tp / (self.pred + self.gold + self.eps)
+
+
 class SpanMetric(Metric):
 
     def __init__(self, eps=1e-12):

@@ -11,7 +11,7 @@ from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField
 from supar.utils.logging import get_logger, progress_bar
-from supar.utils.metric import ChartMetric
+from supar.utils.metric import ChartMetric, SrlMetric
 from supar.utils.transform import CoNLL
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
@@ -155,7 +155,7 @@ class BiaffineSemanticDependencyParser(Parser):
     def _evaluate(self, loader):
         self.model.eval()
 
-        total_loss, metric = 0, ChartMetric()
+        total_loss, metric = 0, SrlMetric()
 
         for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
@@ -441,9 +441,13 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             self.optimizer.step()
             self.scheduler.step()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            # edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            #        labels.masked_fill(~(edges.gt(0) & mask), -1))
+            
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+
             bar.set_postfix_str(
                 f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
             )
@@ -452,7 +456,7 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
     def _evaluate(self, loader):
         self.model.eval()
 
-        total_loss, metric = 0, ChartMetric()
+        total_loss, metric = 0, SrlMetric()
 
         for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
@@ -465,9 +469,13 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
                                            s_label, edges, labels, mask)
             # total_loss += loss.item()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+            # edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            #        labels.masked_fill(~(edges.gt(0) & mask), -1))
+
+            label_preds = self.model.decode(s_edge, s_label)
+            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+
         # total_loss /= len(loader)
 
         # return total_loss, metric
@@ -565,13 +573,12 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         if 'bert' in args.feat:
             from transformers import AutoTokenizer, GPT2Tokenizer, GPT2TokenizerFast
             tokenizer = AutoTokenizer.from_pretrained(args.bert)
-            BERT = SubwordField(
-                'bert',
-                pad=tokenizer.pad_token,
-                unk=tokenizer.unk_token,
-                bos=tokenizer.bos_token or tokenizer.cls_token,
-                fix_len=args.fix_len,
-                tokenize=tokenizer.tokenize)
+            BERT = SubwordField('bert',
+                                pad=tokenizer.pad_token,
+                                unk=tokenizer.unk_token,
+                                bos=tokenizer.bos_token or tokenizer.cls_token,
+                                fix_len=args.fix_len,
+                                tokenize=tokenizer.tokenize)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)

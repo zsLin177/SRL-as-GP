@@ -537,7 +537,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         # get outputs from embedding layers
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
-            word_embed = torch.cat((word_embed, self.embed_proj(self.pretrained(words))), -1)
+            word_embed = torch.cat(
+                (word_embed, self.embed_proj(self.pretrained(words))), -1)
             # word_embed += self.pretrained(words)
 
         feat_embeds = []
@@ -560,25 +561,52 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         x = self.lstm_dropout(x)
 
         # apply MLPs to the BiLSTM output states
-        un_d = self.mlp_un_d(x)
-        un_h = self.mlp_un_h(x)
-        bin_d = self.mlp_bin_d(x)
-        bin_h = self.mlp_bin_h(x)
-        bin_g = self.mlp_bin_g(x)
+
+        # un_d = self.mlp_un_d(x)
+        # un_h = self.mlp_un_h(x)
+        # bin_d = self.mlp_bin_d(x)
+        # bin_h = self.mlp_bin_h(x)
+        # bin_g = self.mlp_bin_g(x)
+        # label_h = self.mlp_label_h(x)
+        # label_d = self.mlp_label_d(x)
+        # label_h = self.mlp_label_h(x)
+
+        # # [batch_size, seq_len, seq_len]
+        # s_egde = self.edge_attn(un_d, un_h)
+        # # [batch_size, seq_len, seq_len, n_labels]
+        # s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
+        # s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
+        # # [batch_size, seq_len, seq_len, n_labels]
+        # s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2).triu_()
+        # s_cop = s_cop + s_cop.transpose(-1, -2)
+        # # [batch_size, seq_len, seq_len, n_labels]
+        # s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
+        # # [batch_size, seq_len, seq_len, n_labels]
+        # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+
+        # return s_egde, s_sib, s_cop, s_grd, s_label
+
+        edge_d = self.mlp_un_d(x)
+        edge_h = self.mlp_un_h(x)
+        pair_d = self.mlp_bin_d(x)
+        pair_h = self.mlp_bin_h(x)
+        pair_g = self.mlp_bin_g(x)
         label_h = self.mlp_label_h(x)
         label_d = self.mlp_label_d(x)
-        label_h = self.mlp_label_h(x)
+        
 
         # [batch_size, seq_len, seq_len]
-        s_egde = self.edge_attn(un_d, un_h)
-        # [batch_size, seq_len, seq_len, n_labels]
-        s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
-        s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
-        # [batch_size, seq_len, seq_len, n_labels]
-        s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2).triu_()
-        s_cop = s_cop + s_cop.transpose(-1, -2)
-        # [batch_size, seq_len, seq_len, n_labels]
-        s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
+        s_egde = self.edge_attn(edge_d, edge_h)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
+        s_sib = self.sib_attn(pair_d, pair_d, pair_h)
+        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
+            0, 3, 1, 2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
+        s_cop = self.cop_attn(pair_h, pair_d, pair_h).permute(0, 3, 1, 2)
+        s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->g)
+        s_grd = self.grd_attn(pair_g, pair_d, pair_h).permute(0, 3, 1, 2)
+        # ? 怎么少了?
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
@@ -611,9 +639,9 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
 
         edge_mask = edges.gt(0) & mask
         edge_loss, marginals = self.vi((s_egde, s_sib, s_cop, s_grd), mask,
-                                       edges)
+                                       edge_mask.long())
         # print(s_label[edge_mask].shape, labels[edge_mask].shape)
-        if(edge_mask.any()):
+        if (edge_mask.any()):
             label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
             loss = self.interpolation * label_loss + (
                 1 - self.interpolation) * edge_loss
@@ -634,4 +662,5 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_egde.argmax(-1), s_label.argmax(-1)
+        # return s_egde.argmax(-1), s_label.argmax(-1)
+        return s_label.argmax(-1).masked_fill_(s_egde.lt(0.5), -1)

@@ -158,7 +158,7 @@ class MFVISemanticDependency(nn.Module):
         # mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
         # mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
         # [seq_len, seq_len, batch_size], (h->m)
-        s_edge = s_edge.permute(2, 1, 0)
+        s_edge = s_edge.permute(2, 1, 0)  # *mask?
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
         s_sib = s_sib.permute(2, 1, 3, 0) * mask2o
         # [seq_len, seq_len, seq_len, batch_size], (h->m->c)
@@ -171,7 +171,7 @@ class MFVISemanticDependency(nn.Module):
         q = s_edge
 
         for _ in range(self.max_iter):
-            q = q.sigmoid()
+            q = q.sigmoid()  # ?
             # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
             q = s_edge + (q.unsqueeze(1) * s_sib +
                           q.transpose(0, 1).unsqueeze(0) * s_cop +

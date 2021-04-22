@@ -98,12 +98,15 @@ class Parser(object):
 
         logger.info("Evaluating the dataset")
         start = datetime.now()
-        loss, metric = self._evaluate(dataset.loader)
+        # loss, metric = self._evaluate(dataset.loader)
+        metric = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
-        logger.info(f"loss: {loss:.4f} - {metric}")
+        # logger.info(f"loss: {loss:.4f} - {metric}")
+        logger.info(f"- {metric}")
         logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
 
-        return loss, metric
+        # return loss, metric
+        return metric
 
     def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         args = self.args.update(locals())
