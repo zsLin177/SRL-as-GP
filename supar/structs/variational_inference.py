@@ -161,7 +161,7 @@ class MFVISemanticDependency(nn.Module):
         Args:
             scores (~torch.Tensor, ~torch.Tensor):
                 Tuple of four tensors `s_edge`, `s_sib`, `s_cop` and `s_grd`.
-                `s_edge` (``[batch_size, seq_len, seq_len]``) holds Scores of all possible dependent-head pairs.
+                `s_edge` (``[batch_size, seq_len, seq_len]``) holds scores of all possible dependent-head pairs.
                 `s_sib` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-sibling triples.
                 `s_cop` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-coparent triples.
                 `s_grd` (``[batch_size, seq_len, seq_len, seq_len]``) holds the scores of dependent-head-grandparent triples.
@@ -169,18 +169,18 @@ class MFVISemanticDependency(nn.Module):
                 The mask to avoid aggregation on padding tokens.
             target (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 A Tensor of gold-standard dependent-head pairs. Default: ``None``.
-
         Returns:
             ~torch.Tensor, ~torch.Tensor:
                 The first is the training loss averaged by the number of tokens, which won't be returned if ``target=None``.
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.mfvi(*scores, mask)
+        logits = self.mfvi(*scores, mask)
+        marginals = logits.sigmoid()
 
         if target is None:
             return marginals
-        loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
+        loss = F.binary_cross_entropy_with_logits(logits[mask], target[mask].float())
 
         return loss, marginals
 
@@ -211,7 +211,7 @@ class MFVISemanticDependency(nn.Module):
             # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
             q = s_edge + (q.unsqueeze(1) * s_sib + q.transpose(0, 1).unsqueeze(0) * s_cop + q.unsqueeze(0) * s_grd).sum(2)
 
-        return q.permute(2, 1, 0).sigmoid()
+        return q.permute(2, 1, 0)
 
 
 class LBPSemanticDependency(nn.Module):
@@ -249,11 +249,12 @@ class LBPSemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        marginals = self.lbp(*scores, mask)
+        logits = self.lbp(*scores, mask)
+        marginals = logits.softmax(-1)[..., 1]
 
         if target is None:
             return marginals
-        loss = F.binary_cross_entropy(marginals[mask], target[mask].float())
+        loss = F.cross_entropy(logits[mask], target[mask])
 
         return loss, marginals
 
@@ -266,7 +267,6 @@ class LBPSemanticDependency(nn.Module):
         mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
         mask2o = mask2o & hs.unsqueeze(-1).ne(hs.new_tensor(range(seq_len))).unsqueeze(-1)
         mask2o = mask2o & ms.unsqueeze(-1).ne(ms.new_tensor(range(seq_len))).unsqueeze(-1)
-        # log potentials of unary and binary factors
         # [2, seq_len, seq_len, batch_size], (h->m)
         s_edge = torch.stack((torch.zeros_like(s_edge), s_edge)).permute(0, 3, 2, 1)
         # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
@@ -301,4 +301,4 @@ class LBPSemanticDependency(nn.Module):
             # q(ij) = s(ij) + sum(m(ik->ij)), k != i,j
             q = s_edge + ((m_sib + m_cop + m_grd).transpose(2, 3) * mask2o).sum(3)
 
-        return q.permute(3, 2, 1, 0).softmax(-1)[..., 1]
+        return q.permute(3, 2, 1, 0)

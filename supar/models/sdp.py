@@ -85,7 +85,6 @@ class BiaffineSemanticDependencyModel(Model):
     .. _transformers:
         https://github.com/huggingface/transformers
     """
-
     def __init__(self,
                  n_words,
                  n_labels,
@@ -120,13 +119,31 @@ class BiaffineSemanticDependencyModel(Model):
                  **kwargs):
         super().__init__(**Config().update(locals()))
 
-        self.mlp_edge_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_edge_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_label_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
-        self.mlp_label_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_edge_d = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_edge,
+                              dropout=edge_mlp_dropout,
+                              activation=False)
+        self.mlp_edge_h = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_edge,
+                              dropout=edge_mlp_dropout,
+                              activation=False)
+        self.mlp_label_d = MLP(n_in=self.args.n_hidden,
+                               n_out=n_mlp_label,
+                               dropout=label_mlp_dropout,
+                               activation=False)
+        self.mlp_label_h = MLP(n_in=self.args.n_hidden,
+                               n_out=n_mlp_label,
+                               dropout=label_mlp_dropout,
+                               activation=False)
 
-        self.edge_attn = Biaffine(n_in=n_mlp_edge, n_out=2, bias_x=True, bias_y=True)
-        self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
+        self.edge_attn = Biaffine(n_in=n_mlp_edge,
+                                  n_out=2,
+                                  bias_x=True,
+                                  bias_y=True)
+        self.label_attn = Biaffine(n_in=n_mlp_label,
+                                   n_out=n_labels,
+                                   bias_x=True,
+                                   bias_y=True)
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, feats=None):
@@ -179,8 +196,12 @@ class BiaffineSemanticDependencyModel(Model):
 
         edge_mask = labels.ge(0) & mask
         edge_loss = self.criterion(s_egde[mask], edge_mask[mask].long())
-        label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-        return self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
+        if (edge_mask.any()):
+            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            return self.args.interpolation * label_loss + (
+                1 - self.args.interpolation) * edge_loss
+        else:
+            return edge_loss
 
     def decode(self, s_egde, s_label):
         r"""
@@ -284,7 +305,6 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
     .. _transformers:
         https://github.com/huggingface/transformers
     """
-
     def __init__(self,
                  n_words,
                  n_labels,
@@ -323,20 +343,45 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
                  **kwargs):
         super().__init__(**Config().update(locals()))
 
-        self.mlp_edge_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_edge_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_edge, dropout=edge_mlp_dropout, activation=False)
-        self.mlp_pair_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
-        self.mlp_pair_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
-        self.mlp_pair_g = MLP(n_in=self.args.n_hidden, n_out=n_mlp_pair, dropout=pair_mlp_dropout, activation=False)
-        self.mlp_label_d = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
-        self.mlp_label_h = MLP(n_in=self.args.n_hidden, n_out=n_mlp_label, dropout=label_mlp_dropout, activation=False)
+        self.mlp_edge_d = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_edge,
+                              dropout=edge_mlp_dropout,
+                              activation=False)
+        self.mlp_edge_h = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_edge,
+                              dropout=edge_mlp_dropout,
+                              activation=False)
+        self.mlp_pair_d = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_pair,
+                              dropout=pair_mlp_dropout,
+                              activation=False)
+        self.mlp_pair_h = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_pair,
+                              dropout=pair_mlp_dropout,
+                              activation=False)
+        self.mlp_pair_g = MLP(n_in=self.args.n_hidden,
+                              n_out=n_mlp_pair,
+                              dropout=pair_mlp_dropout,
+                              activation=False)
+        self.mlp_label_d = MLP(n_in=self.args.n_hidden,
+                               n_out=n_mlp_label,
+                               dropout=label_mlp_dropout,
+                               activation=False)
+        self.mlp_label_h = MLP(n_in=self.args.n_hidden,
+                               n_out=n_mlp_label,
+                               dropout=label_mlp_dropout,
+                               activation=False)
 
         self.edge_attn = Biaffine(n_in=n_mlp_edge, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_pair, bias_x=True, bias_y=True)
-        self.label_attn = Biaffine(n_in=n_mlp_label, n_out=n_labels, bias_x=True, bias_y=True)
-        self.inference = (MFVISemanticDependency if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
+        self.label_attn = Biaffine(n_in=n_mlp_label,
+                                   n_out=n_labels,
+                                   bias_x=True,
+                                   bias_y=True)
+        self.inference = (MFVISemanticDependency if inference == 'mfvi' else
+                          LBPSemanticDependency)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, words, feats=None):
@@ -371,7 +416,8 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         s_egde = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
         s_sib = self.sib_attn(pair_d, pair_d, pair_h)
-        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(0, 3, 1, 2)
+        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
+            0, 3, 1, 2)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
         s_cop = self.cop_attn(pair_h, pair_d, pair_h).permute(0, 3, 1, 2)
         s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
@@ -406,10 +452,15 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         """
 
         edge_mask = labels.ge(0) & mask
-        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd), mask, edge_mask.long())
-        label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-        loss = self.args.interpolation * label_loss + (1 - self.args.interpolation) * edge_loss
-        return loss, marginals
+        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd),
+                                              mask, edge_mask.long())
+        if(edge_mask.any()):
+            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            loss = self.args.interpolation * label_loss + (
+                1 - self.args.interpolation) * edge_loss
+            return loss, marginals
+        else:
+            return edge_loss, marginals
 
     def decode(self, s_egde, s_label):
         r"""

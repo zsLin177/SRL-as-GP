@@ -16,7 +16,7 @@ from supar.utils.parallel import DistributedDataParallel as DDP
 from supar.utils.parallel import is_master
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
-
+import pdb
 
 class Parser(object):
 
@@ -29,7 +29,7 @@ class Parser(object):
         self.transform = transform
 
     def train(self, train, dev, test, buckets=32, batch_size=5000, update_steps=1,
-              clip=5.0, epochs=5000, patience=100, **kwargs):
+              clip=5.0, epochs=10, patience=100, **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
@@ -51,6 +51,7 @@ class Parser(object):
         else:
             from transformers import AdamW, get_linear_schedule_with_warmup
             steps = len(train.loader) * epochs // args.update_steps
+            # pdb.set_trace()
             self.optimizer = AdamW(
                 [{'params': c.parameters(), 'lr': args.lr * (1 if n == 'encoder' else args.lr_rate)}
                  for n, c in self.model.named_children()],
@@ -68,10 +69,10 @@ class Parser(object):
 
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
-            loss, dev_metric = self._evaluate(dev.loader)
-            logger.info(f"{'dev:':5} loss: {loss:.4f} - {dev_metric}")
-            loss, test_metric = self._evaluate(test.loader)
-            logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
+            dev_metric = self._evaluate(dev.loader)
+            logger.info(f" - {dev_metric}")
+            test_metric = self._evaluate(test.loader)
+            logger.info(f"- {test_metric}")
 
             t = datetime.now() - start
             if dev_metric > best_metric:
@@ -84,7 +85,7 @@ class Parser(object):
             elapsed += t
             if epoch - best_e >= args.patience:
                 break
-        loss, metric = self.load(**args)._evaluate(test.loader)
+        metric = self.load(**args)._evaluate(test.loader)
 
         logger.info(f"Epoch {best_e} saved")
         logger.info(f"{'dev:':5} {best_metric}")
@@ -103,12 +104,12 @@ class Parser(object):
 
         logger.info("Evaluating the dataset")
         start = datetime.now()
-        loss, metric = self._evaluate(dataset.loader)
+        metric = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
         logger.info(f"loss: {loss:.4f} - {metric}")
         logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
 
-        return loss, metric
+        return metric
 
     def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         args = self.args.update(locals())
