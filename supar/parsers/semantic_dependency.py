@@ -427,8 +427,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, labels in bar:
-            self.optimizer.zero_grad()
+        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+            # self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
@@ -436,17 +436,23 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            s_label, edges, labels, mask)
+            loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
+            # self.optimizer.step()
+            # self.scheduler.step()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
             # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
             #        labels.masked_fill(~(edges.gt(0) & mask), -1))
-            
+
             label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+            metric(label_preds.masked_fill(~mask, -1),
+                   labels.masked_fill(~mask, -1))
 
             bar.set_postfix_str(
                 f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
@@ -474,7 +480,8 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
             #        labels.masked_fill(~(edges.gt(0) & mask), -1))
 
             label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~mask, -1), labels.masked_fill(~mask, -1))
+            metric(label_preds.masked_fill(~mask, -1),
+                   labels.masked_fill(~mask, -1))
 
         # total_loss /= len(loader)
 

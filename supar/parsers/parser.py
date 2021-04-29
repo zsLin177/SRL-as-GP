@@ -27,7 +27,16 @@ class Parser(object):
         self.optimizer = optimizer
         self.scheduler = scheduler
 
-    def train(self, train, dev, test, buckets=32, batch_size=5000, clip=5.0, epochs=5000, patience=100, **kwargs):
+    def train(self,
+              train,
+              dev,
+              test,
+              buckets=32,
+              batch_size=5000,
+              clip=5.0,
+              epochs=5000,
+              patience=100,
+              **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
@@ -38,14 +47,19 @@ class Parser(object):
         train = Dataset(self.transform, args.train, **args)
         dev = Dataset(self.transform, args.dev)
         test = Dataset(self.transform, args.test)
-        train.build(args.batch_size, args.buckets, True, dist.is_initialized())
+        print(args.update_steps)
+        train.build(args.batch_size // args.update_steps, args.buckets, True,
+                    dist.is_initialized())
         dev.build(args.batch_size, args.buckets)
         test.build(args.batch_size, args.buckets)
-        logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
+        logger.info(
+            f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n{'test:':6} {test}\n")
         # logger.info(f"\n{'train:':6} {train}\n{'dev:':6} {dev}\n")
 
         if dist.is_initialized():
-            self.model = DDP(self.model, device_ids=[args.local_rank], find_unused_parameters=True)
+            self.model = DDP(self.model,
+                             device_ids=[args.local_rank],
+                             find_unused_parameters=True)
 
         elapsed = timedelta()
         best_e, best_metric = 1, Metric()
@@ -103,12 +117,21 @@ class Parser(object):
         elapsed = datetime.now() - start
         # logger.info(f"loss: {loss:.4f} - {metric}")
         logger.info(f"- {metric}")
-        logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
+        logger.info(
+            f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s"
+        )
 
         # return loss, metric
         return metric
 
-    def predict(self, data, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
+    def predict(self,
+                data,
+                pred=None,
+                lang='en',
+                buckets=8,
+                batch_size=5000,
+                prob=False,
+                **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
@@ -131,7 +154,9 @@ class Parser(object):
         if pred is not None and is_master():
             logger.info(f"Saving predicted results to {pred}")
             self.transform.save(pred, dataset.sentences)
-        logger.info(f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s")
+        logger.info(
+            f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s"
+        )
 
         return dataset
 
@@ -175,7 +200,8 @@ class Parser(object):
         if os.path.exists(path):
             state = torch.load(path)
         else:
-            state = torch.hub.load_state_dict_from_url(supar.PRETRAINED[path] if path in supar.PRETRAINED else path)
+            state = torch.hub.load_state_dict_from_url(
+                supar.PRETRAINED[path] if path in supar.PRETRAINED else path)
         cls = supar.PARSER[state['name']] if cls.NAME is None else cls
         args = state['args'].update(args)
         model = cls.MODEL(**args)
@@ -192,9 +218,11 @@ class Parser(object):
         args = model.args
         state_dict = {k: v.cpu() for k, v in model.state_dict().items()}
         pretrained = state_dict.pop('pretrained.weight', None)
-        state = {'name': self.NAME,
-                 'args': args,
-                 'state_dict': state_dict,
-                 'pretrained': pretrained,
-                 'transform': self.transform}
+        state = {
+            'name': self.NAME,
+            'args': args,
+            'state_dict': state_dict,
+            'pretrained': pretrained,
+            'transform': self.transform
+        }
         torch.save(state, path, pickle_module=dill)
