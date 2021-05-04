@@ -2,12 +2,13 @@
 
 import os
 import pdb
+import numpy
 import torch
 import torch.nn as nn
 from supar.models import (BiaffineSemanticDependencyModel,
                           VISemanticDependencyModel)
 from supar.parsers.parser import Parser
-from supar.utils import Config, Dataset, Embedding
+from supar.utils import Config, Dataset, Embedding, vocab
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField
 from supar.utils.logging import get_logger, progress_bar
@@ -41,6 +42,21 @@ class BiaffineSemanticDependencyParser(Parser):
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
+        self.transition_params = self.get_transition_params()
+
+    def get_transition_params(self):
+        label_strs = [
+            self.LABEL.vocab[idx] for idx in range(len(self.LABEL.vocab))
+        ] + ['O']
+        num_tags = len(label_strs)
+        transition_params = numpy.zeros([num_tags, num_tags],
+                                        dtype=numpy.float32)
+        for i, prev_label in enumerate(label_strs):
+            for j, label in enumerate(label_strs):
+                if i != j and label[
+                        0] == 'I' and not prev_label == 'B' + label[1:]:
+                    transition_params[i, j] = numpy.NINF
+        return transition_params
 
     def train(self,
               train,
@@ -132,6 +148,7 @@ class BiaffineSemanticDependencyParser(Parser):
         bar, metric = progress_bar(loader), ChartMetric()
 
         for words, *feats, edges, labels in bar:
+
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -174,18 +191,179 @@ class BiaffineSemanticDependencyParser(Parser):
         return metric
 
     @torch.no_grad()
-    def _predict(self, loader):
+    def viterbi_decode(self, score):
+        r'''
+            This should only be used at test time.
+            score: A [seq_len, num_tags] matrix of unary potentials.
+                    seq_len is the real len
+            viterbi: A [seq_len] list of integers containing the highest scoring tag
+              indicies.
+            viterbi_score: A float containing the score for the Viterbi sequence.
+        '''
+        score = numpy.array(score)
+        transition_params = self.transition_params
+        trellis = numpy.zeros_like(score)
+        backpointers = numpy.zeros_like(score, dtype=numpy.int32)
+        trellis[0] = score[0]
+        for t in range(1, score.shape[0]):
+            v = numpy.expand_dims(trellis[t - 1], 1) + transition_params
+            trellis[t] = score[t] + numpy.max(v, 0)
+            backpointers[t] = numpy.argmax(v, 0)
+        viterbi = [numpy.argmax(trellis[-1])]
+        for bp in reversed(backpointers[1:]):
+            viterbi.append(bp[viterbi[-1]])
+        viterbi.reverse()
+        viterbi_score = numpy.max(trellis[-1])
+        return viterbi, viterbi_score
+
+    @torch.no_grad()
+    def get_label_seqs(self, s_edge, s_label, mask, lemmas):
+        r'''
+            get label_index seqs for a sentence
+            s_egde (~torch.Tensor): ``[seq_len, seq_len, 2]``.
+                Scores of all possible edges.
+            s_label (~torch.Tensor): ``[ seq_len, seq_len, n_labels]``.
+                Scores of all possible labels on each edge.
+            mask :[seq_len] filter paded tokens and root
+        '''
+        seq_len, _, n_labels = s_label.shape
+        real_len = mask.sum().item()
+        # [seq_len, seq_len] tail,head
+        edge_pred = s_edge.argmax(-1)
+        # [seq_len] if token is a predicate
+        predicate_mask = (edge_pred[:, 0] == 1) & mask
+        predicate_num = predicate_mask.sum().item()
+        # [seq_len, seq_len, n_labels] head, tail, n_labels
+        s_label = s_label.permute(1, 0, 2)
+        # [predicate_num, seq_len, n_labels]
+        prd_seq_label_scores = s_label[predicate_mask]
+        # [predicate_num, seq_len] whether exist edge between predicate and token
+        prd_seq_mask = (edge_pred.permute(1, 0)[predicate_mask].eq(1)) & mask
+        # [predicate_num, seq_len, n_labels+1]
+        prd_seq_label_scores = torch.cat(
+            (prd_seq_label_scores,
+             torch.zeros_like(prd_seq_label_scores[..., :1])), -1)
+        prd_seq_label_scores[..., -1] = float('-inf')
+        prd_seq_label_scores.masked_fill_(
+            (~prd_seq_mask).unsqueeze(2).expand(-1, -1, n_labels + 1),
+            float('-inf'))
+        end_mask = (~prd_seq_mask) & mask
+        prd_seq_label_scores[end_mask, [-1] * end_mask.sum()] = 0.0
+        # list [prd1_idx, prd2_idx] start from 1
+        real_idx_prd = ((predicate_mask == True).nonzero()).squeeze(1).tolist()
+        columns = []
+        columns.append(predicate_mask.tolist()[1:real_len + 1])
+        for w in prd_seq_label_scores:
+            real_score = w.tolist()[1:real_len + 1]
+            viterbi, viterbi_score = self.viterbi_decode(real_score)
+            label_lst = []
+            for idx in viterbi:
+                if (idx < len(self.LABEL.vocab)):
+                    label_lst.append(self.LABEL.vocab[idx])
+                else:
+                    label_lst.append('O')
+            # pdb.set_trace()
+
+            columns.append(label_lst)
+
+        for i in range(1, len(columns)):
+            prd_idx = real_idx_prd[i - 1]
+            new_column = self.label2span(columns[i], prd_idx)
+            columns[i] = new_column
+
+        lines = []
+        for i in range(real_len):
+            line = []
+            # print(i)
+            # print(len(columns[0]))
+            # print(mask)
+            # print(mask.sum())
+            if (columns[0][i]):
+                line.append(lemmas[i])
+            else:
+                line.append('-')
+            for j in range(1, len(columns)):
+                line.append(columns[j][i])
+            lines.append(line)
+        return lines
+
+    @torch.no_grad()
+    def label2span(self, label_lst, prd_idx):
+        column = []
+        i = 0
+        while (i < len(label_lst)):
+            rela = label_lst[i]
+            if ((i + 1) == prd_idx):
+                column.append('(V*)')
+                i += 1
+            elif (rela == 'O'):
+                column.append('*')
+                i += 1
+            else:
+                position_tag = rela[0]
+                label = rela[2:]
+                if (position_tag in ('B', 'I')):
+                    # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
+                    span_start = i
+                    i += 1
+                    labels = {}
+                    labels[label] = 1
+                    while (i < len(label_lst)):
+                        if (label_lst[i][0] == 'I'):
+                            labels[label_lst[i][2:]] = labels.get(
+                                label_lst[i][2:], 0) + 1
+                            i += 1
+                        else:
+                            # label_lst[i][0] == 'B' or 'O' 直接把i指向下一个或O
+                            break
+                    length = i - span_start
+                    max_label = label
+                    max_num = 0
+                    for key, value in labels.items():
+                        if (value > max_num):
+                            max_num = value
+                            max_label = key
+                    if (length == 1):
+                        column.append('(' + max_label + '*' + ')')
+                    else:
+                        column.append('(' + max_label + '*')
+                        column += ['*'] * (length - 2)
+                        column.append('*' + ')')
+        return column
+
+    @torch.no_grad()
+    def _predict(self, loader, file_name):
         self.model.eval()
 
+        # f = open(file_name, 'w')
         preds = {}
         charts, probs = [], []
-        for words, *feats in progress_bar(loader):
+        bar = progress_bar(loader)
+        sentence_idx = 0
+        for idx, (words, *feats) in enumerate(bar):
+            # pdb.set_trace()
+            batch_size, _ = words.shape
             mask = words.ne(self.WORD.pad_index)
+            t_mask = words.ne(self.WORD.pad_index)
+            t_mask[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
+            # for i in range(batch_size):
+            #     this_mask = t_mask[i]
+            #     this_edge_score = s_edge[i]
+            #     this_label_score = s_label[i]
+            #     this_lemma = loader.dataset[sentence_idx].values[2]
+            #     sentence_idx += 1
+            #     lines = self.get_label_seqs(this_edge_score, this_label_score,
+            #                                 this_mask, this_lemma)
+            #     for line in lines:
+            #         f.write(' '.join(line) + '\n')
+            #     f.write('\n')
+
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
+
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
             charts.extend(chart[1:i, :i].tolist()
@@ -196,6 +374,7 @@ class BiaffineSemanticDependencyParser(Parser):
                     for i, prob in zip(lens,
                                        s_edge.softmax(-1).unbind())
                 ])
+        # f.close()
         charts = [
             CoNLL.build_relations(
                 [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
@@ -489,37 +668,32 @@ class VISemanticDependencyParser(BiaffineSemanticDependencyParser):
         return metric
 
     @torch.no_grad()
-    def _predict(self, loader):
+    def _predict(self, loader, file_name):
         self.model.eval()
 
-        preds = {}
-        charts, probs = [], []
+        preds = {'labels': [], 'probs': [] if self.args.prob else None}
         for words, *feats in progress_bar(loader):
-            mask = words.ne(self.WORD.pad_index)
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
             s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
-                                                  -1)
-            charts.extend(chart[1:i, :i].tolist()
-                          for i, chart in zip(lens, chart_preds.unbind()))
+            label_preds = self.model.decode(s_edge,
+                                            s_label).masked_fill(~mask, -1)
+            preds['labels'].extend(chart[1:i, :i].tolist()
+                                   for i, chart in zip(lens, label_preds))
             if self.args.prob:
-                probs.extend([
+                preds['probs'].extend([
                     prob[1:i, :i].cpu()
-                    for i, prob in zip(lens,
-                                       s_edge.softmax(-1).unbind())
+                    for i, prob in zip(lens, s_edge.unbind())
                 ])
-        charts = [
+        preds['labels'] = [
             CoNLL.build_relations(
                 [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
-                 for row in chart]) for chart in charts
+                 for row in chart]) for chart in preds['labels']
         ]
-        preds = {'labels': charts}
-        if self.args.prob:
-            preds['probs'] = probs
 
         return preds
 

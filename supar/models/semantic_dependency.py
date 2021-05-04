@@ -298,6 +298,7 @@ class BiaffineSemanticDependencyModel(nn.Module):
         """
 
         return s_egde.argmax(-1), s_label.argmax(-1)
+        
 
 
 class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
@@ -593,7 +594,7 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         pair_g = self.mlp_bin_g(x)
         label_h = self.mlp_label_h(x)
         label_d = self.mlp_label_d(x)
-        
+
 
         # [batch_size, seq_len, seq_len]
         s_egde = self.edge_attn(edge_d, edge_h)

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 import nltk
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.tokenizer import Tokenizer
+from torch.distributions.utils import lazy_property
 
 logger = get_logger(__name__)
 
@@ -14,7 +15,6 @@ class Transform(object):
     r"""
     A Transform object corresponds to a specific data format.
     It holds several instances of data fields that provide instructions for preprocessing and numericalizing, etc.
-
     Attributes:
         training (bool):
             Sets the object in training mode.
@@ -27,18 +27,27 @@ class Transform(object):
     def __init__(self):
         self.training = True
 
+    def __len__(self):
+        return len(self.fields)
+
     def __repr__(self):
-        s = '\n'
-        for i, field in enumerate(self):
-            if not isinstance(field, Iterable):
-                field = [field]
-            for f in field:
-                if f is not None:
-                    s += f"  {f}\n"
+        s = '\n' + '\n'.join([f" {f}" for f in self.flattened_fields]) + '\n'
         return f"{self.__class__.__name__}({s})"
 
     def __call__(self, sentences):
-        pairs = dict()
+        # numericalize the specified field of each sentence and set the value as sentence attribute
+        for f in self.flattened_fields:
+            values = f.transform([getattr(i, f.name) for i in sentences])
+            for s, v in zip(sentences, values):
+                s.transformed[f.name] = v
+        return self.flattened_fields
+
+    def __getitem__(self, index):
+        return getattr(self, self.fields[index])
+
+    @lazy_property
+    def flattened_fields(self):
+        flattened = []
         for field in self:
             if field not in self.src and field not in self.tgt:
                 continue
@@ -48,12 +57,8 @@ class Transform(object):
                 field = [field]
             for f in field:
                 if f is not None:
-                    pairs[f] = f.transform([getattr(i, f.name) for i in sentences])
-
-        return pairs
-
-    def __getitem__(self, index):
-        return getattr(self, self.fields[index])
+                    flattened.append(f)
+        return flattened
 
     def train(self, training=True):
         self.training = training
@@ -82,7 +87,6 @@ class Sentence(object):
     r"""
     A Sentence object holds a sentence with regard to specific data format.
     """
-
     def __init__(self, transform):
         self.transform = transform
 
@@ -90,19 +94,16 @@ class Sentence(object):
         self.maps = dict()
         # names of each field
         self.keys = set()
-        # values of each position
-        self.values = []
         for i, field in enumerate(self.transform):
             if not isinstance(field, Iterable):
                 field = [field]
             for f in field:
                 if f is not None:
                     self.maps[f.name] = i
-                    # 具体看conll transform的fields顺序
                     self.keys.add(f.name)
-
-    def __len__(self):
-        return len(self.values[0])
+        # original values and numericalized values of each position
+        self.values = []
+        self.transformed = {key: None for key in self.keys}
 
     def __contains__(self, key):
         return key in self.keys
@@ -134,10 +135,10 @@ class Sentence(object):
 
 class CoNLL(Transform):
     r"""
-    The CoNLL object holds ten fields required for CoNLL-X data format.
-    Each field can be binded with one or more :class:`Field` objects. For example,
-    ``FORM`` can contain both :class:`Field` and :class:`SubwordField` to produce tensors for words and subwords.
-
+    The CoNLL object holds ten fields required for CoNLL-X data format :cite:`buchholz-marsi-2006-conll`.
+    Each field can be binded with one or more :class:`~supar.utils.field.Field` objects. For example,
+    ``FORM`` can contain both :class:`~supar.utils.field.Field` and :class:`~supar.utils.field.SubwordField`
+    to produce tensors for words and subwords.
     Attributes:
         ID:
             Token counter, starting at 1.
@@ -160,20 +161,24 @@ class CoNLL(Transform):
             Projective heads of tokens, which are either values of ID or zeros, or underscores if not available.
         PDEPREL:
             Dependency relations to the PHEAD, or underscores if not available.
-
-    References:
-        - Sabine Buchholz and Erwin Marsi. 2006.
-          `CoNLL-X Shared Task on Multilingual Dependency Parsing`_.
-
-    .. _CoNLL-X Shared Task on Multilingual Dependency Parsing:
-        https://www.aclweb.org/anthology/W06-2920/
     """
 
-    fields = ['ID', 'FORM', 'LEMMA', 'CPOS', 'POS', 'FEATS', 'HEAD', 'DEPREL', 'PHEAD', 'PDEPREL']
+    fields = [
+        'ID', 'FORM', 'LEMMA', 'CPOS', 'POS', 'FEATS', 'HEAD', 'DEPREL',
+        'PHEAD', 'PDEPREL'
+    ]
 
     def __init__(self,
-                 ID=None, FORM=None, LEMMA=None, CPOS=None, POS=None,
-                 FEATS=None, HEAD=None, DEPREL=None, PHEAD=None, PDEPREL=None):
+                 ID=None,
+                 FORM=None,
+                 LEMMA=None,
+                 CPOS=None,
+                 POS=None,
+                 FEATS=None,
+                 HEAD=None,
+                 DEPREL=None,
+                 PHEAD=None,
+                 PDEPREL=None):
         super().__init__()
 
         self.ID = ID
@@ -196,30 +201,28 @@ class CoNLL(Transform):
         return self.HEAD, self.DEPREL, self.PHEAD, self.PDEPREL
 
     @classmethod
-    def get_arcs(cls, sequence):
-        return [int(i) for i in sequence]
+    def get_arcs(cls, sequence, placeholder='_'):
+        return [-1 if i == placeholder else int(i) for i in sequence]
 
     @classmethod
-    def get_sibs(cls, sequence):
-        sibs = [-1] * (len(sequence) + 1)
-        heads = [0] + [int(i) for i in sequence]
+    def get_sibs(cls, sequence, placeholder='_'):
+        sibs = [[0] * (len(sequence) + 1) for _ in range(len(sequence) + 1)]
+        heads = [0] + [-1 if i == placeholder else int(i) for i in sequence]
 
-        for i in range(1, len(heads)):
-            hi = heads[i]
-            for j in range(i + 1, len(heads)):
-                hj = heads[j]
+        for i, hi in enumerate(heads[1:], 1):
+            for j, hj in enumerate(heads[i + 1:], i + 1):
                 di, dj = hi - i, hj - j
                 if hi >= 0 and hj >= 0 and hi == hj and di * dj > 0:
                     if abs(di) > abs(dj):
-                        sibs[i] = j
+                        sibs[i][hi] = j
                     else:
-                        sibs[j] = i
+                        sibs[j][hj] = i
                     break
         return sibs[1:]
 
     @classmethod
     def get_edges(cls, sequence):
-        edges = [[0]*(len(sequence)+1) for _ in range(len(sequence)+1)]
+        edges = [[0] * (len(sequence) + 1) for _ in range(len(sequence) + 1)]
         for i, s in enumerate(sequence, 1):
             if s != '_':
                 for pair in s.split('|'):
@@ -228,7 +231,8 @@ class CoNLL(Transform):
 
     @classmethod
     def get_labels(cls, sequence):
-        labels = [[None]*(len(sequence)+1) for _ in range(len(sequence)+1)]
+        labels = [[None] * (len(sequence) + 1)
+                  for _ in range(len(sequence) + 1)]
         for i, s in enumerate(sequence, 1):
             if s != '_':
                 for pair in s.split('|'):
@@ -240,9 +244,11 @@ class CoNLL(Transform):
     def build_relations(cls, chart):
         sequence = ['_'] * len(chart)
         for i, row in enumerate(chart):
-            pairs = [(j, label) for j, label in enumerate(row) if label is not None]
+            pairs = [(j, label) for j, label in enumerate(row)
+                     if label is not None]
             if len(pairs) > 0:
-                sequence[i] = '|'.join(f"{head}:{label}" for head, label in pairs)
+                sequence[i] = '|'.join(f"{head}:{label}"
+                                       for head, label in pairs)
         return sequence
 
     @classmethod
@@ -250,14 +256,11 @@ class CoNLL(Transform):
         r"""
         Converts a list of tokens to a string in CoNLL-X format.
         Missing fields are filled with underscores.
-
         Args:
             tokens (list[str] or list[tuple]):
-                This can be either a list of words or word/pos pairs.
-
+                This can be either a list of words, word/pos pairs or word/lemma/pos triples.
         Returns:
             A string in CoNLL-X format.
-
         Examples:
             >>> print(CoNLL.toconll(['She', 'enjoys', 'playing', 'tennis', '.']))
             1       She     _       _       _       _       _       _       _       _
@@ -265,15 +268,37 @@ class CoNLL(Transform):
             3       playing _       _       _       _       _       _       _       _
             4       tennis  _       _       _       _       _       _       _       _
             5       .       _       _       _       _       _       _       _       _
-
+            >>> print(CoNLL.toconll([('She',     'she',    'PRP'),
+                                     ('enjoys',  'enjoy',  'VBZ'),
+                                     ('playing', 'play',   'VBG'),
+                                     ('tennis',  'tennis', 'NN'),
+                                     ('.',       '_',      '.')]))
+            1       She     she     PRP     _       _       _       _       _       _
+            2       enjoys  enjoy   VBZ     _       _       _       _       _       _
+            3       playing play    VBG     _       _       _       _       _       _
+            4       tennis  tennis  NN      _       _       _       _       _       _
+            5       .       _       .       _       _       _       _       _       _
         """
 
         if isinstance(tokens[0], str):
-            s = '\n'.join([f"{i}\t{word}\t" + '\t'.join(['_']*8)
-                           for i, word in enumerate(tokens, 1)])
+            s = '\n'.join([
+                f"{i}\t{word}\t" + '\t'.join(['_'] * 8)
+                for i, word in enumerate(tokens, 1)
+            ])
+        elif len(tokens[0]) == 2:
+            s = '\n'.join([
+                f"{i}\t{word}\t_\t{tag}\t" + '\t'.join(['_'] * 6)
+                for i, (word, tag) in enumerate(tokens, 1)
+            ])
+        elif len(tokens[0]) == 3:
+            s = '\n'.join([
+                f"{i}\t{word}\t{lemma}\t{tag}\t" + '\t'.join(['_'] * 6)
+                for i, (word, lemma, tag) in enumerate(tokens, 1)
+            ])
         else:
-            s = '\n'.join([f"{i}\t{word}\t_\t{tag}\t" + '\t'.join(['_']*6)
-                           for i, (word, tag) in enumerate(tokens, 1)])
+            raise RuntimeError(
+                f"Invalid sequence {tokens}. Only list of str or list of word/pos/lemma tuples are support."
+            )
         return s + '\n'
 
     @classmethod
@@ -281,17 +306,13 @@ class CoNLL(Transform):
         r"""
         Checks if a dependency tree is projective.
         This also works for partial annotation.
-
         Besides the obvious crossing arcs, the examples below illustrate two non-projective cases
         which are hard to detect in the scenario of partial annotation.
-
         Args:
             sequence (list[int]):
                 A list of head indices.
-
         Returns:
             ``True`` if the tree is projective, ``False`` otherwise.
-
         Examples:
             >>> CoNLL.isprojective([2, -1, 1])  # -1 denotes un-annotated cases
             False
@@ -301,13 +322,14 @@ class CoNLL(Transform):
 
         pairs = [(h, d) for d, h in enumerate(sequence, 1) if h >= 0]
         for i, (hi, di) in enumerate(pairs):
-            for hj, dj in pairs[i+1:]:
+            for hj, dj in pairs[i + 1:]:
                 (li, ri), (lj, rj) = sorted([hi, di]), sorted([hj, dj])
                 if li <= hj <= ri and hi == dj:
                     return False
                 if lj <= hi <= rj and hj == di:
                     return False
-                if (li < lj < ri or li < rj < ri) and (li - lj)*(ri - rj) > 0:
+                if (li < lj < ri
+                        or li < rj < ri) and (li - lj) * (ri - rj) > 0:
                     return False
         return True
 
@@ -315,7 +337,6 @@ class CoNLL(Transform):
     def istree(cls, sequence, proj=False, multiroot=False):
         r"""
         Checks if the arcs form an valid dependency tree.
-
         Args:
             sequence (list[int]):
                 A list of head indices.
@@ -323,10 +344,8 @@ class CoNLL(Transform):
                 If ``True``, requires the tree to be projective. Default: ``False``.
             multiroot (bool):
                 If ``False``, requires the tree to contain only a single root. Default: ``True``.
-
         Returns:
             ``True`` if the arcs form an valid tree, ``False`` otherwise.
-
         Examples:
             >>> CoNLL.istree([3, 0, 0, 3], multiroot=True)
             True
@@ -346,23 +365,21 @@ class CoNLL(Transform):
             return False
         return next(tarjan(sequence), None) is None
 
-    def load(self, data, lang='en', proj=False, max_len=None, **kwargs):
+    def load(self, data, lang=None, proj=False, max_len=None, **kwargs):
         r"""
         Loads the data in CoNLL-X format.
         Also supports for loading data from CoNLL-U file with comments and non-integer IDs.
-
         Args:
             data (list[list] or str):
                 A list of instances or a filename.
             lang (str):
-                Language code (e.g., 'en') or language name (e.g., 'English') for the text to tokenize.
+                Language code (e.g., ``en``) or language name (e.g., ``English``) for the text to tokenize.
                 ``None`` if tokenization is not required.
-                Default: ``en``.
+                Default: ``None``.
             proj (bool):
                 If ``True``, discards all non-projective sentences. Default: ``False``.
             max_len (int):
                 Sentences exceeding the length will be discarded. Default: ``None``.
-
         Returns:
             A list of :class:`CoNLLSentence` instances.
         """
@@ -373,19 +390,25 @@ class CoNLL(Transform):
         else:
             if lang is not None:
                 tokenizer = Tokenizer(lang)
-                data = [tokenizer(i) for i in ([data] if isinstance(data, str) else data)]
+                data = [
+                    tokenizer(i)
+                    for i in ([data] if isinstance(data, str) else data)
+                ]
             else:
                 data = [data] if isinstance(data[0], str) else data
             lines = '\n'.join([self.toconll(i) for i in data]).split('\n')
 
         i, start, sentences = 0, 0, []
-        for line in progress_bar(lines, leave=False):
+        for line in progress_bar(lines):
             if not line:
                 sentences.append(CoNLLSentence(self, lines[start:i]))
                 start = i + 1
             i += 1
         if proj:
-            sentences = [i for i in sentences if self.isprojective(list(map(int, i.arcs)))]
+            sentences = [
+                i for i in sentences
+                if self.isprojective(list(map(int, i.arcs)))
+            ]
         if max_len is not None:
             sentences = [i for i in sentences if len(i) < max_len]
 
@@ -395,14 +418,12 @@ class CoNLL(Transform):
 class CoNLLSentence(Sentence):
     r"""
     Sencence in CoNLL-X format.
-
     Args:
         transform (CoNLL):
-            A :class:`CoNLL` object.
+            A :class:`~supar.utils.transform.CoNLL` object.
         lines (list[str]):
             A list of strings composing a sentence in CoNLL-X format.
             Comments and non-integer IDs are permitted.
-
     Examples:
         >>> lines = ['# text = But I found the location wonderful and the neighbors very kind.',
                      '1\tBut\t_\t_\t_\t_\t_\t_\t_\t_',
@@ -438,7 +459,6 @@ class CoNLLSentence(Sentence):
         11      kind    _       _       _       _       6       conj    _       _
         12      .       _       _       _       _       3       punct   _       _
     """
-
     def __init__(self, transform, lines):
         super().__init__(transform)
 
@@ -449,7 +469,7 @@ class CoNLLSentence(Sentence):
         for i, line in enumerate(lines):
             value = line.split('\t')
             if value[0].startswith('#') or not value[0].isdigit():
-                self.annotations[-i-1] = line
+                self.annotations[-i - 1] = line
             else:
                 self.annotations[len(self.values)] = line
                 self.values.append(value)
@@ -457,16 +477,20 @@ class CoNLLSentence(Sentence):
 
     def __repr__(self):
         # cover the raw lines
-        merged = {**self.annotations,
-                  **{i: '\t'.join(map(str, line))
-                     for i, line in enumerate(zip(*self.values))}}
+        merged = {
+            **self.annotations,
+            **{
+                i: '\t'.join(map(str, line))
+                for i, line in enumerate(zip(*self.values))
+            }
+        }
         return '\n'.join(merged.values()) + '\n'
 
 
 class Tree(Transform):
     r"""
-    The Tree object factorize a constituency tree into four fields, each associated with one or more :class:`Field` objects.
-
+    The Tree object factorize a constituency tree into four fields,
+    each associated with one or more :class:`~supar.utils.field.Field` objects.
     Attributes:
         WORD:
             Words in the sentence.
@@ -498,11 +522,16 @@ class Tree(Transform):
         return self.CHART,
 
     @classmethod
-    def totree(cls, tokens, root='', special_tokens={'(': '-LRB-', ')': '-RRB-'}):
+    def totree(cls,
+               tokens,
+               root='',
+               special_tokens={
+                   '(': '-LRB-',
+                   ')': '-RRB-'
+               }):
         r"""
         Converts a list of tokens to a :class:`nltk.tree.Tree`.
         Missing fields are filled with underscores.
-
         Args:
             tokens (list[str] or list[tuple]):
                 This can be either a list of words or word/pos pairs.
@@ -511,10 +540,8 @@ class Tree(Transform):
             special_tokens (dict):
                 A dict for normalizing some special tokens to avoid tree construction crash.
                 Default: {'(': '-LRB-', ')': '-RRB-'}.
-
         Returns:
             A :class:`nltk.tree.Tree` object.
-
         Examples:
             >>> print(Tree.totree(['She', 'enjoys', 'playing', 'tennis', '.'], 'TOP'))
             (TOP ( (_ She)) ( (_ enjoys)) ( (_ playing)) ( (_ tennis)) ( (_ .)))
@@ -527,7 +554,9 @@ class Tree(Transform):
             if word in special_tokens:
                 tokens[i] = (special_tokens[word], pos)
                 mapped.append((i, word))
-        tree = nltk.Tree.fromstring(f"({root} {' '.join([f'( ({pos} {word}))' for word, pos in tokens])})")
+        tree = nltk.Tree.fromstring(
+            f"({root} {' '.join([f'( ({pos} {word}))' for word, pos in tokens])})"
+        )
         for i, word in mapped:
             tree[i][0][0] = word
         return tree
@@ -536,18 +565,14 @@ class Tree(Transform):
     def binarize(cls, tree):
         r"""
         Conducts binarization over the tree.
-
         First, the tree is transformed to satisfy `Chomsky Normal Form (CNF)`_.
         Here we call :meth:`~nltk.tree.Tree.chomsky_normal_form` to conduct left-binarization.
         Second, all unary productions in the tree are collapsed.
-
         Args:
             tree (nltk.tree.Tree):
                 The tree to be binarized.
-
         Returns:
             The binarized tree.
-
         Examples:
             >>> tree = nltk.Tree.fromstring('''
                                             (TOP
@@ -563,14 +588,15 @@ class Tree(Transform):
                   (NP (_ She))
                   (VP
                     (VP|<> (_ enjoys))
-                    (S+VP (VP|<> (_ playing)) (NP (_ tennis)))))
+                    (S::VP (VP|<> (_ playing)) (NP (_ tennis)))))
                 (S|<> (_ .))))
-
         .. _Chomsky Normal Form (CNF):
             https://en.wikipedia.org/wiki/Chomsky_normal_form
         """
 
         tree = tree.copy(True)
+        if len(tree) == 1 and not isinstance(tree[0][0], nltk.Tree):
+            tree[0] = nltk.Tree(f"{tree.label()}|<>", [tree[0]])
         nodes = [tree]
         while nodes:
             node = nodes.pop()
@@ -581,7 +607,7 @@ class Tree(Transform):
                         if not isinstance(child[0], nltk.Tree):
                             node[i] = nltk.Tree(f"{node.label()}|<>", [child])
         tree.chomsky_normal_form('left', 0, 0)
-        tree.collapse_unary()
+        tree.collapse_unary(joinChar='::')
 
         return tree
 
@@ -590,7 +616,6 @@ class Tree(Transform):
         r"""
         Factorizes the tree into a sequence.
         The tree is traversed in pre-order.
-
         Args:
             tree (nltk.tree.Tree):
                 The tree to be factorized.
@@ -605,10 +630,8 @@ class Tree(Transform):
                 The key-val pairs in the dict are considered equivalent (non-directional). This is used for evaluation.
                 The default dict defined in `EVALB`_ is: {'ADVP': 'PRT'}
                 Default: ``None``.
-
         Returns:
             The sequence of the factorized tree.
-
         Examples:
             >>> tree = nltk.Tree.fromstring('''
                                             (TOP
@@ -621,11 +644,9 @@ class Tree(Transform):
             [(0, 5, 'TOP'), (0, 5, 'S'), (0, 1, 'NP'), (1, 4, 'VP'), (2, 4, 'S'), (2, 4, 'VP'), (3, 4, 'NP')]
             >>> Tree.factorize(tree, delete_labels={'TOP', 'S1', '-NONE-', ',', ':', '``', "''", '.', '?', '!', ''})
             [(0, 5, 'S'), (0, 1, 'NP'), (1, 4, 'VP'), (2, 4, 'S'), (2, 4, 'VP'), (3, 4, 'NP')]
-
         .. _EVALB:
             https://nlp.cs.nyu.edu/evalb/
         """
-
         def track(tree, i):
             label = tree.label()
             if delete_labels is not None and label in delete_labels:
@@ -633,7 +654,7 @@ class Tree(Transform):
             if equal_labels is not None:
                 label = equal_labels.get(label, label)
             if len(tree) == 1 and not isinstance(tree[0], nltk.Tree):
-                return (i+1 if label is not None else i), []
+                return (i + 1 if label is not None else i), []
             j, spans = i, []
             for child in tree:
                 j, s = track(child, j)
@@ -641,6 +662,7 @@ class Tree(Transform):
             if label is not None and j > i:
                 spans = [(i, j, label)] + spans
             return j, spans
+
         return track(tree, 0)[1]
 
     @classmethod
@@ -649,21 +671,18 @@ class Tree(Transform):
         Builds a constituency tree from the sequence. The sequence is generated in pre-order.
         During building the tree, the sequence is de-binarized to the original format (i.e.,
         the suffixes ``|<>`` are ignored, the collapsed labels are recovered).
-
         Args:
             tree (nltk.tree.Tree):
                 An empty tree that provides a base for building a result tree.
             sequence (list[tuple]):
                 A list of tuples used for generating a tree.
-                Each tuple consits of the indices of left/right span boundaries and label of the span.
-
+                Each tuple consits of the indices of left/right boundaries and label of the constituent.
         Returns:
             A result constituency tree.
-
         Examples:
             >>> tree = Tree.totree(['She', 'enjoys', 'playing', 'tennis', '.'], 'TOP')
             >>> sequence = [(0, 5, 'S'), (0, 4, 'S|<>'), (0, 1, 'NP'), (1, 4, 'VP'), (1, 2, 'VP|<>'),
-                            (2, 4, 'S+VP'), (2, 3, 'VP|<>'), (3, 4, 'NP'), (4, 5, 'S|<>')]
+                            (2, 4, 'S::VP'), (2, 3, 'VP|<>'), (3, 4, 'NP'), (4, 5, 'S|<>')]
             >>> print(Tree.build(tree, sequence))
             (TOP
               (S
@@ -673,55 +692,58 @@ class Tree(Transform):
         """
 
         root = tree.label()
-        leaves = [subtree for subtree in tree.subtrees()
-                  if not isinstance(subtree[0], nltk.Tree)]
+        leaves = [
+            subtree for subtree in tree.subtrees()
+            if not isinstance(subtree[0], nltk.Tree)
+        ]
 
         def track(node):
             i, j, label = next(node)
-            if j == i+1:
+            if j == i + 1:
                 children = [leaves[i]]
             else:
                 children = track(node) + track(node)
-            if label.endswith('|<>'):
+            if label is None or label.endswith('|<>'):
                 return children
-            labels = label.split('+')
+            labels = label.split('::')
             tree = nltk.Tree(labels[-1], children)
             for label in reversed(labels[:-1]):
                 tree = nltk.Tree(label, [tree])
             return [tree]
+
         return nltk.Tree(root, track(iter(sequence)))
 
-    def load(self, data, lang='en', max_len=None, **kwargs):
+    def load(self, data, lang=None, max_len=None, **kwargs):
         r"""
         Args:
             data (list[list] or str):
                 A list of instances or a filename.
             lang (str):
-                Language code (e.g., 'en') or language name (e.g., 'English') for the text to tokenize.
+                Language code (e.g., ``en``) or language name (e.g., ``English``) for the text to tokenize.
                 ``None`` if tokenization is not required.
-                Default: ``en``.
+                Default: ``None``.
             max_len (int):
                 Sentences exceeding the length will be discarded. Default: ``None``.
-
         Returns:
             A list of :class:`TreeSentence` instances.
         """
         if isinstance(data, str) and os.path.exists(data):
             with open(data, 'r') as f:
-                trees = [nltk.Tree.fromstring(string) for string in f]
+                trees = [nltk.Tree.fromstring(s) for s in f]
             self.root = trees[0].label()
         else:
             if lang is not None:
                 tokenizer = Tokenizer(lang)
-                data = [tokenizer(i) for i in ([data] if isinstance(data, str) else data)]
+                data = [
+                    tokenizer(i)
+                    for i in ([data] if isinstance(data, str) else data)
+                ]
             else:
                 data = [data] if isinstance(data[0], str) else data
             trees = [self.totree(i, self.root) for i in data]
 
         i, sentences = 0, []
-        for tree in progress_bar(trees, leave=False):
-            if len(tree) == 1 and not isinstance(tree[0][0], nltk.Tree):
-                continue
+        for tree in progress_bar(trees):
             sentences.append(TreeSentence(self, tree))
             i += 1
         if max_len is not None:
@@ -738,15 +760,17 @@ class TreeSentence(Sentence):
         tree (nltk.tree.Tree):
             A :class:`nltk.tree.Tree` object.
     """
-
     def __init__(self, transform, tree):
         super().__init__(transform)
 
         words, tags = zip(*tree.pos())
-        chart = [[None]*(len(words)+1) for _ in range(len(words)+1)]
+        chart = [[None] * (len(words) + 1) for _ in range(len(words) + 1)]
         for i, j, label in Tree.factorize(Tree.binarize(tree)[0]):
             chart[i][j] = label
         self.values = [words, tags, tree, chart]
 
     def __repr__(self):
         return self.values[-2].pformat(1000000)
+
+    def pretty_print(self):
+        self.values[-2].pretty_print()
