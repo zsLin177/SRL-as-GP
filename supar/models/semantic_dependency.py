@@ -298,7 +298,6 @@ class BiaffineSemanticDependencyModel(nn.Module):
         """
 
         return s_egde.argmax(-1), s_label.argmax(-1)
-        
 
 
 class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
@@ -595,7 +594,6 @@ class VISemanticDependencyModel(BiaffineSemanticDependencyModel):
         label_h = self.mlp_label_h(x)
         label_d = self.mlp_label_d(x)
 
-
         # [batch_size, seq_len, seq_len]
         s_egde = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
@@ -835,21 +833,21 @@ class BiaffineSRLModel(nn.Module):
         # the Biaffine layers
 
         self.prd_edge_attn = Biaffine(n_in=n_mlp_edge,
-                                  n_out=2,
-                                  bias_x=True,
-                                  bias_y=True)
+                                      n_out=2,
+                                      bias_x=True,
+                                      bias_y=True)
         self.arg_edge_attn = Biaffine(n_in=n_mlp_edge,
-                                  n_out=2,
-                                  bias_x=True,
-                                  bias_y=True)
+                                      n_out=2,
+                                      bias_x=True,
+                                      bias_y=True)
         self.prd_label_attn = Biaffine(n_in=n_mlp_label,
-                                   n_out=n_senses,
-                                   bias_x=True,
-                                   bias_y=True)
+                                       n_out=n_senses,
+                                       bias_x=True,
+                                       bias_y=True)
         self.arg_label_attn = Biaffine(n_in=n_mlp_label,
-                                   n_out=n_labels,
-                                   bias_x=True,
-                                   bias_y=True)
+                                       n_out=n_labels,
+                                       bias_x=True,
+                                       bias_y=True)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -917,32 +915,41 @@ class BiaffineSRLModel(nn.Module):
         edge_h = self.mlp_edge_h(x)
         label_d = self.mlp_label_d(x)
         label_h = self.mlp_label_h(x)
-        
+
         # [batch_size, seq_len, 1, 2]
-        s_prd_edge = self.prd_edge_attn(edge_d, edge_h[:, 0, :].unsqueeze(1)).permute(0, 2, 3, 1)
+        s_prd_edge = self.prd_edge_attn(edge_d,
+                                        edge_h[:, 0, :].unsqueeze(1)).permute(
+                                            0, 2, 3, 1)
         # [batch_size, seq_len, seq_len-1, 2]
-        s_arg_edge = self.arg_edge_attn(edge_d, edge_h[:, 1:, :]).permute(0, 2, 3, 1)
+        s_arg_edge = self.arg_edge_attn(edge_d,
+                                        edge_h[:, 1:, :]).permute(0, 2, 3, 1)
         # [batch_size, seq_len, seq_len, 2]
         s_egde = torch.cat((s_prd_edge, s_arg_edge), 2)
         # [batch_size, seq_len, 1, n_senses]
-        s_prd_label = self.prd_label_attn(label_d, label_h[:, 0, :].unsqueeze(1)).permute(0, 2, 3, 1)
+        s_prd_label = self.prd_label_attn(
+            label_d, label_h[:, 0, :].unsqueeze(1)).permute(0, 2, 3, 1)
         # [batch_size, seq_len, seq_len-1, n_labels]
-        s_arg_label = self.arg_label_attn(label_d, label_h[:, 1:, :]).permute(0, 2, 3, 1)
+        s_arg_label = self.arg_label_attn(label_d,
+                                          label_h[:,
+                                                  1:, :]).permute(0, 2, 3, 1)
 
         return s_egde, s_prd_label, s_arg_label
 
-    def loss(self, s_egde, s_prd_label, s_arg_label, edges, senses, labels, mask):
+    def loss(self, s_egde, s_prd_label, s_arg_label, edges, senses, labels,
+             mask):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
-            s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all possible labels on each edge.
+            s_prd_label (~torch.Tensor): ``[batch_size, seq_len, 1, n_senses]``.
+            
+            s_arg_label (~torch.Tensor): ``[batch_size, seq_len, seq_len-1, n_labels]
             edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
                 The tensor of gold-standard edges.
-            labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
+            senses:[batch_size, seq_len, 1]
+            labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len-1]``.
                 The tensor of gold-standard labels.
-            mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
+            mask (~torch.BoolTensor): ``[batch_size, seq_len, seq_len]``.
                 The mask for covering the unpadded tokens.
 
         Returns:
@@ -951,23 +958,31 @@ class BiaffineSRLModel(nn.Module):
         """
         edge_mask = edges.gt(0) & mask
         edge_loss = self.criterion(s_egde[mask], edges[mask])
-        label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+        s_prd_label = s_prd_label.squeeze(2)
+        prd_mask = edge_mask[..., 0]
+        prd_loss = self.criterion(s_prd_label[prd_mask],
+                                  senses.squeeze(2)[prd_mask])
+        arg_mask = edge_mask[..., 1:]
+        arg_loss = self.criterion(s_arg_label[arg_mask], labels[arg_mask])
+        label_loss = prd_loss + arg_loss
+        # label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
         return self.interpolation * label_loss + (
             1 - self.interpolation) * edge_loss
 
-    def decode(self, s_egde, s_label):
+    def decode(self, s_egde, s_prd_label, s_arg_label):
         r"""
         Args:
             s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
-            s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all possible labels on each edge.
+            s_prd_label (~torch.Tensor): ``[batch_size, seq_len, 1, n_senses]``.
+            s_arg_label (~torch.Tensor): ``[batch_size, seq_len, seq_len-1, n_labels]
 
         Returns:
             ~torch.Tensor, ~torch.Tensor:
-                Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
+                edge: [batch_size, seq_len, seq_len].
+                prd: [batch_size, seq_len]
+                arg: [batch_size, seq_len, seq_len-1]
         """
 
-        return s_egde.argmax(-1), s_label.argmax(-1)
-        
-
+        return s_egde.argmax(-1), s_prd_label.squeeze(2).argmax(
+            -1), s_arg_label.argmax(-1)

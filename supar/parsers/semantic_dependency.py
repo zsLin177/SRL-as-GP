@@ -474,7 +474,7 @@ class BiaffineSemanticDependencyParser(Parser):
         if LEMMA is not None:
             LEMMA.build(train)
         LABEL.build(train)
-        
+
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
@@ -935,22 +935,26 @@ class BiaffineSRLParser(Parser):
     def _train(self, loader):
         self.model.train()
 
-        bar, metric = progress_bar(loader), ChartMetric()
+        bar, metric = progress_bar(loader), SrlMetric()
 
-        for words, *feats, edges, labels in bar:
+        for words, *feats, edges, labels, senses in bar:
 
             self.optimizer.zero_grad()
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
-            loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            s_egde, s_prd_label, s_arg_label = self.model(words, feats)
+            loss = self.model.loss(s_egde, s_prd_label, s_arg_label, edges,
+                                   senses, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             self.optimizer.step()
             self.scheduler.step()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            edge_preds, prd_preds, arg_preds = self.model.decode(
+                s_egde, s_prd_label, s_arg_label)
+            label_preds = torch.cat((prd_preds.unsqueeze(2), arg_preds), -1)
+            labels = torch.cat((senses, labels), -1)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
             bar.set_postfix_str(
@@ -963,15 +967,18 @@ class BiaffineSRLParser(Parser):
 
         total_loss, metric = 0, SrlMetric()
 
-        for words, *feats, edges, labels in loader:
+        for words, *feats, edges, labels, senses in loader:
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            s_egde, s_prd_label, s_arg_label = self.model(words, feats)
             # loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             # total_loss += loss.item()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            edge_preds, prd_preds, arg_preds = self.model.decode(
+                s_egde, s_prd_label, s_arg_label)
+            label_preds = torch.cat((prd_preds.unsqueeze(2), arg_preds), -1)
+            labels = torch.cat((senses, labels), -1)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
         # total_loss /= len(loader)
@@ -1264,7 +1271,7 @@ class BiaffineSRLParser(Parser):
         LABEL.build(train)
 
         SENSE.build(train)
-        
+
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
