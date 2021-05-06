@@ -55,6 +55,7 @@ def main():
                            default=0.1,
                            type=float,
                            help='Constant to even out the label/edge loss')
+    subparser.add_argument('--n_lstm_layers', default=3, type=int)
     # evaluate
     subparser = subparsers.add_parser(
         'evaluate', help='Evaluate the specified parser and dataset.')

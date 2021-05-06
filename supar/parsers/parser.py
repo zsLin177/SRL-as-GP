@@ -47,7 +47,6 @@ class Parser(object):
         train = Dataset(self.transform, args.train, **args)
         dev = Dataset(self.transform, args.dev)
         test = Dataset(self.transform, args.test)
-        print(args.update_steps)
         train.build(args.batch_size // args.update_steps, args.buckets, True,
                     dist.is_initialized())
         dev.build(args.batch_size, args.buckets)

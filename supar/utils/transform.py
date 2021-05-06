@@ -239,6 +239,32 @@ class CoNLL(Transform):
                     edge, label = pair.split(':')
                     labels[i][int(edge)] = label
         return labels
+    
+    @classmethod
+    def get_srl_labels(cls, sequence):
+        labels = [[None] * len(sequence)
+                  for _ in range(len(sequence) + 1)]
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge != '0'):
+                        labels[i][int(edge) - 1] = label
+        # [seq_len, seq_len-1] seq_len=1+len(seq)
+        return labels
+
+    @classmethod
+    def get_srl_senses(cls, sequence):
+        senses = [[None] for _ in range(len(sequence) + 1)]
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge == '0'):
+                        senses[i][0] = label
+        # [seq_len, 1] seq_len=1+len(seq)
+        return senses
+        
 
     @classmethod
     def build_relations(cls, chart):
