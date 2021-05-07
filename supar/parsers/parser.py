@@ -145,7 +145,7 @@ class Parser(object):
 
         logger.info("Making predictions on the dataset")
         start = datetime.now()
-        preds = self._predict(dataset.loader, pred)
+        preds = self._predict(dataset.loader)
         elapsed = datetime.now() - start
 
         for name, value in preds.items():

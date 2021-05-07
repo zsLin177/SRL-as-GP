@@ -25,6 +25,9 @@ def main():
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--itp', default=0.1, type=float, help='inter...')
     subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
+    subparser.add_argument('--n_lstm_layers', default=3, type=int)
+    subparser.add_argument('--encoder', default='lstm')
+    subparser.add_argument('--clip', default=5.0, type=float)
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

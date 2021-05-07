@@ -131,7 +131,7 @@ class SrlMetric(Metric):
     @property
     def p_p(self):
         return self.p_tp / (self.p_pred + self.eps)
-
+    
     @property
     def p_r(self):
         return self.p_tp / (self.p_gold + self.eps)
