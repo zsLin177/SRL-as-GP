@@ -32,7 +32,7 @@ __pycache__
 # saved model
 *.pkl
 *.pt
-
+tgt_temp_*
 # hidden files
 .*
 
