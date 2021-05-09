@@ -2,14 +2,14 @@
 
 import argparse
 
-from supar import BiaffineSRLParser
+from supar import BiaffineSrlParser
 from supar.cmds.cmd import parse
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Create Biaffine Semantic Dependency Parser.')
-    parser.set_defaults(Parser=BiaffineSRLParser)
+        description='Create Biaffine SRL Parser.')
+    parser.set_defaults(Parser=BiaffineSrlParser)
     subparsers = parser.add_subparsers(title='Commands', dest='mode')
     # train
     subparser = subparsers.add_parser('train', help='Train a parser.')
@@ -56,6 +56,16 @@ def main():
                            type=float,
                            help='Constant to even out the label/edge loss')
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
+    subparser.add_argument('--encoder', default='lstm')
+    subparser.add_argument('--clip', default=5.0, type=float)
+    subparser.add_argument('--dev_gold',
+                           default='data/conll05-original-style/sc-dev.final')
+    subparser.add_argument('--dev_pred',
+                           default='dev_pred')
+    subparser.add_argument('--test_gold',
+                           default='data/conll05-original-style/sc-wsj.final')
+    subparser.add_argument('--test_pred',
+                           default='test_pred')
     # evaluate
     subparser = subparsers.add_parser(
         'evaluate', help='Evaluate the specified parser and dataset.')

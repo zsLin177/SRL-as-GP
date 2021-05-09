@@ -1,5 +1,7 @@
 # data files
 data
+exp
+conll05-original-style
 
 # bash scripts
 *.sh
@@ -18,6 +20,11 @@ results
 
 # log files
 *.log
+*.conllu
+*.out
+*.07
+*pred
+*.txt
 
 # pycache
 __pycache__
