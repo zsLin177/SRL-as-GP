@@ -233,9 +233,9 @@ class Parser(object):
                              find_unused_parameters=True)
 
         elapsed = timedelta()
-        best_e, best_metric = 1, -1
-        rand_file_seed1 = random.randint(1,100)
-        rand_file_seed2 = random.randint(1,100)
+        best_e, best_metric = 1, Metric()
+        # rand_file_seed1 = random.randint(1,100)
+        # rand_file_seed2 = random.randint(1,100)
         for epoch in range(1, args.epochs + 1):
             start = datetime.now()
 
@@ -244,27 +244,27 @@ class Parser(object):
             # loss, dev_metric = self._evaluate(dev.loader)
             dev_metric = self._evaluate(dev.loader)
             logger.info(f"{'dev:':5} - {dev_metric}")
-            dev_conll_f1, dev_lisa_f1, test_conll_f1, test_lisa_f1 = 0, 0, 0, 0
-            if(dev_pred != None):
-                dev_ds = self.predict(args.dev, args.dev_pred)
-                # pdb.set_trace()
-                dev_conll_f1, dev_lisa_f1 = get_results(args.dev_gold, args.dev_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))    
-            logger.info(f"dev_conllf1:{dev_conll_f1:6.4} - dev_lisaf1:{dev_lisa_f1:6.4}")
+            # dev_conll_f1, dev_lisa_f1, test_conll_f1, test_lisa_f1 = 0, 0, 0, 0
+            # if(dev_pred != None):
+            #     dev_ds = self.predict(args.dev, args.dev_pred)
+            #     # pdb.set_trace()
+            #     dev_conll_f1, dev_lisa_f1 = get_results(args.dev_gold, args.dev_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))    
+            # logger.info(f"dev_conllf1:{dev_conll_f1:6.4} - dev_lisaf1:{dev_lisa_f1:6.4}")
 
             # loss, test_metric = self._evaluate(test.loader)
             # logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
 
             test_metric = self._evaluate(test.loader)
             logger.info(f"{'test:':5} - {test_metric}")
-            if(test_pred != None):
-                test_ds = self.predict(args.test, args.test_pred)
-                test_conll_f1, test_lisa_f1 = get_results(args.test_gold, args.test_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))
-            logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
+            # if(test_pred != None):
+            #     test_ds = self.predict(args.test, args.test_pred)
+            #     test_conll_f1, test_lisa_f1 = get_results(args.test_gold, args.test_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))
+            # logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
 
             t = datetime.now() - start
             # save the model if it is the best so far
-            if dev_lisa_f1 > best_metric:
-                best_e, best_metric = epoch, dev_lisa_f1
+            if dev_metric > best_metric:
+                best_e, best_metric = epoch, dev_metric
                 if is_master():
                     self.save(args.path)
                 logger.info(f"{t}s elapsed (saved)\n")
@@ -313,6 +313,7 @@ class Parser(object):
                 buckets=8,
                 batch_size=5000,
                 prob=False,
+                conll05=False,
                 **kwargs):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
@@ -321,10 +322,10 @@ class Parser(object):
         if args.prob:
             self.transform.append(Field('probs'))
 
-        # logger.info("Loading the data")
+        logger.info("Loading the data")
         dataset = Dataset(self.transform, data, lang=lang)
         dataset.build(args.batch_size, args.buckets)
-        # logger.info(f"\n{dataset}")
+        logger.info(f"\n{dataset}")
 
         logger.info("Making predictions on the dataset")
 
@@ -337,9 +338,15 @@ class Parser(object):
         if pred is not None and is_master():
             logger.info(f"Saving predicted results to {pred}")
             self.transform.save(pred, dataset.sentences)
-        # logger.info(
-        #     f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s"
-        # )
+        logger.info(
+            f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s"
+        )
+        if(args.conll05):
+            rand_file_seed1 = random.randint(1,100)
+            rand_file_seed2 = random.randint(1,100)
+            test_conll_f1, test_lisa_f1 = 0, 0
+            test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))
+            logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
 
         return dataset
 

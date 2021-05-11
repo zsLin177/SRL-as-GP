@@ -58,14 +58,14 @@ def main():
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
     subparser.add_argument('--encoder', default='lstm')
     subparser.add_argument('--clip', default=5.0, type=float)
-    subparser.add_argument('--dev_gold',
-                           default='data/conll05-original-style/sc-dev.final')
-    subparser.add_argument('--dev_pred',
-                           default='dev_pred')
-    subparser.add_argument('--test_gold',
-                           default='data/conll05-original-style/sc-wsj.final')
-    subparser.add_argument('--test_pred',
-                           default='test_pred')
+    # subparser.add_argument('--dev_gold',
+    #                        default='data/conll05-original-style/sc-dev.final')
+    # subparser.add_argument('--dev_pred',
+    #                        default='dev_pred')
+    # subparser.add_argument('--test_gold',
+    #                        default='data/conll05-original-style/sc-wsj.final')
+    # subparser.add_argument('--test_pred',
+    #                        default='test_pred')
     # evaluate
     subparser = subparsers.add_parser(
         'evaluate', help='Evaluate the specified parser and dataset.')
@@ -92,6 +92,10 @@ def main():
     subparser.add_argument('--pred',
                            default='pred.conllu',
                            help='path to predicted result')
+    subparser.add_argument('--conll05',
+                           action='store_true')
+    subparser.add_argument('--gold',
+                           default='data/conll05-original-style/sc-wsj.final')
     parse(parser)
 
 
