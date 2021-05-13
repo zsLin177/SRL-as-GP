@@ -91,12 +91,14 @@ class BiaffineSrlModel(nn.Module):
     def __init__(self,
                  n_words,
                  n_labels,
+                 split=False,
                  encoder='lstm',
                  n_tags=None,
                  n_chars=None,
                  n_lemmas=None,
                  feat='tag,char,lemma',
                  n_embed=100,
+                 n_pretrained_embed=300,
                  n_embed_proj=125,
                  n_feat_embed=100,
                  n_char_embed=50,
@@ -124,10 +126,10 @@ class BiaffineSrlModel(nn.Module):
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
         if (encoder == 'lstm'):
-            self.embed_proj = nn.Linear(n_embed, n_embed_proj)
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
         else:
             n_embed_proj = 100
-            self.embed_proj = nn.Linear(n_embed, n_embed_proj)
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
 
         self.n_input = n_embed + n_embed_proj
         # self.n_input = n_embed
@@ -171,6 +173,7 @@ class BiaffineSrlModel(nn.Module):
             #                                   bidirectional=True,
             #                                   dropout_in=0.0,
             #                                   dropout_out=0.4)
+
             self.mlp_edge_d = MLP(n_in=n_lstm_hidden * 2,
                                     n_out=n_mlp_edge,
                                     dropout=edge_mlp_dropout,
@@ -179,14 +182,32 @@ class BiaffineSrlModel(nn.Module):
                                     n_out=n_mlp_edge,
                                     dropout=edge_mlp_dropout,
                                     activation=False)
-            self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                    n_out=n_mlp_label,
-                                    dropout=label_mlp_dropout,
-                                    activation=False)
-            self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                    n_out=n_mlp_label,
-                                    dropout=label_mlp_dropout,
-                                    activation=False)
+            if(not split):
+                self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+            else:
+                self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
 
         else:
             self.encoder = SelfAttentionEncoder(num_encoder_layers=12,
@@ -210,6 +231,7 @@ class BiaffineSrlModel(nn.Module):
                                    activation=False)
 
         # the Biaffine layers
+
         self.edge_attn = Biaffine(n_in=n_mlp_edge,
                                   n_out=2,
                                   bias_x=True,
@@ -218,6 +240,7 @@ class BiaffineSrlModel(nn.Module):
                                    n_out=n_labels,
                                    bias_x=True,
                                    bias_y=True)
+
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -290,11 +313,25 @@ class BiaffineSrlModel(nn.Module):
         # apply MLPs to the encoder output states
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
-        label_d = self.mlp_label_d(x)
-        label_h = self.mlp_label_h(x)
-
         # [batch_size, seq_len, seq_len, 2]
         s_egde = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
+        
+        if(not self.args.split):
+            label_d = self.mlp_label_d(x)
+            label_h = self.mlp_label_h(x)
+        else:
+            # [batch_size, seq_len, seq_len]
+            edge_pred = s_egde.argmax(-1)
+            # [batch_size, seq_len]
+            if_prd = edge_pred[..., 0].eq(1) & mask
+            label_d = self.arg_label_d(x)
+            label_h = self.arg_label_h(x)
+            prd_d = self.prd_label_d(x[if_prd])
+            prd_h = self.prd_label_h(x[if_prd])
+            if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+            label_d = label_d.masked_scatter(if_prd, prd_d)
+            label_h = label_h.masked_scatter(if_prd, prd_h)
+
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 

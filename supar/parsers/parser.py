@@ -118,6 +118,9 @@ def produce_column_3(relas, prd_idx):
             # 其实谓词不影响
             column.append('(V*)')
             i += 1
+        elif(rel == ['[prd]']):
+            column.append('*')
+            i += 1
         elif (len(rel) == 0):
             column.append('*')
             i += 1

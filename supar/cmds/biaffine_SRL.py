@@ -45,9 +45,13 @@ def main():
                            default='unk',
                            help='unk token in pretrained embeddings')
     subparser.add_argument('--n-embed',
-                           default=100,
+                           default=300,
                            type=int,
                            help='dimension of embeddings')
+    subparser.add_argument('--n_pretrained_embed',
+                           default=300,
+                           type=int,
+                           help='dimension of pretrained embeddings')
     subparser.add_argument('--bert',
                            default='bert-base-cased',
                            help='which bert model to use')
@@ -58,6 +62,9 @@ def main():
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
     subparser.add_argument('--encoder', default='lstm')
     subparser.add_argument('--clip', default=5.0, type=float)
+    subparser.add_argument('--split',
+                           action='store_true',
+                           help='whether to use different mlp for predicate and arg')
     # subparser.add_argument('--dev_gold',
     #                        default='data/conll05-original-style/sc-dev.final')
     # subparser.add_argument('--dev_pred',
