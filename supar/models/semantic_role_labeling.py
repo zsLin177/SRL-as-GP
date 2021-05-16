@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
@@ -91,6 +92,7 @@ class BiaffineSrlModel(nn.Module):
     def __init__(self,
                  n_words,
                  n_labels,
+                 use_pred=False,
                  split=False,
                  encoder='lstm',
                  n_tags=None,
@@ -231,15 +233,21 @@ class BiaffineSrlModel(nn.Module):
                                    activation=False)
 
         # the Biaffine layers
-
+        # if(not sig):
         self.edge_attn = Biaffine(n_in=n_mlp_edge,
-                                  n_out=2,
-                                  bias_x=True,
-                                  bias_y=True)
+                                    n_out=2,
+                                    bias_x=True,
+                                    bias_y=True)
+        # else:
+        #     # use sigmod loss
+        #     self.edge_attn = Biaffine(n_in=n_mlp_edge,
+        #                             bias_x=True,
+        #                             bias_y=True)
+        # if(not use_pred):
         self.label_attn = Biaffine(n_in=n_mlp_label,
-                                   n_out=n_labels,
-                                   bias_x=True,
-                                   bias_y=True)
+                                n_out=n_labels,
+                                bias_x=True,
+                                bias_y=True)
 
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
@@ -251,7 +259,7 @@ class BiaffineSrlModel(nn.Module):
             self.pretrained = nn.Embedding.from_pretrained(embed)
         return self
 
-    def forward(self, words, feats):
+    def forward(self, words, feats, edges=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -313,15 +321,28 @@ class BiaffineSrlModel(nn.Module):
         # apply MLPs to the encoder output states
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
-        # [batch_size, seq_len, seq_len, 2]
-        s_egde = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
+
+        # if(not self.args.sig):
+            # [batch_size, seq_len, seq_len, 2]
+        s_edge = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
+        # else:
+        #     # [batch_size, seq_len, seq_len]
+        #     s_edge = self.edge_attn(edge_d, edge_h)
         
         if(not self.args.split):
             label_d = self.mlp_label_d(x)
             label_h = self.mlp_label_h(x)
         else:
+            # if(not self.args.sig):
             # [batch_size, seq_len, seq_len]
-            edge_pred = s_egde.argmax(-1)
+            if(edges != None):
+                # 训练时使用正确的边
+                edge_pred = edges
+            else:
+                # 预测时使用预测的边
+                edge_pred = s_edge.argmax(-1)
+            # else:
+            #     edge_pred = s_edge.ge(0).long()
             # [batch_size, seq_len]
             if_prd = edge_pred[..., 0].eq(1) & mask
             label_d = self.arg_label_d(x)
@@ -332,15 +353,15 @@ class BiaffineSrlModel(nn.Module):
             label_d = label_d.masked_scatter(if_prd, prd_d)
             label_h = label_h.masked_scatter(if_prd, prd_h)
 
-        # [batch_size, seq_len, seq_len, n_labels]
+        # [batch_size, seq_len, seq_len, n_labels] or [batch_size, seq_len, seq_len, n_labels+1]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_egde, s_label
+        return s_edge, s_label
 
-    def loss(self, s_egde, s_label, edges, labels, mask):
+    def loss(self, s_edge, s_label, edges, labels, mask):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -355,19 +376,49 @@ class BiaffineSrlModel(nn.Module):
             ~torch.Tensor:
                 The training loss.
         """
-        edge_mask = edges.gt(0) & mask
-        edge_loss = self.criterion(s_egde[mask], edges[mask])
-        if(edge_mask.any()):
-            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-            return self.interpolation * label_loss + (
-                1 - self.interpolation) * edge_loss
+        if(not self.args.use_pred):
+        # with gold edges
+            # if(not self.args.sig):
+            edge_mask = edges.gt(0) & mask
+            edge_loss = self.criterion(s_edge[mask], edges[mask])
+            if(edge_mask.any()):
+                label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+                return self.interpolation * label_loss + (
+                    1 - self.interpolation) * edge_loss
+            else:
+                return edge_loss
+            # else:
+            #     edge_mask = edges.gt(0) & mask
+            #     target = edge_mask.long()
+            #     edge_loss = F.binary_cross_entropy_with_logits(s_edge[mask],
+            #                                       target[mask].float())
+            #     if(edge_mask.any()):
+            #         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            #         return self.interpolation * label_loss + (
+            #             1 - self.interpolation) * edge_loss
+            #     else:
+            #         return edge_loss
         else:
-            return edge_loss
+            # with predicted edges
+            edge_pred = s_edge.argmax(-1)
+            mask1 = edge_pred.gt(0) & mask
+            need_change_mask = mask1 & labels.eq(-1)
+            labels = labels.masked_fill(need_change_mask, self.args.n_labels - 1)
+            # edge loss still use gold
+            # edge_mask = edges.gt(0) & mask
+            edge_loss = self.criterion(s_edge[mask], edges[mask])
+            # label loss use predicted edges
+            if(mask1.any()):
+                label_loss = self.criterion(s_label[mask1], labels[mask1])
+                return self.interpolation * label_loss + (
+                    1 - self.interpolation) * edge_loss
+            else:
+                return edge_loss
 
-    def decode(self, s_egde, s_label):
+    def decode(self, s_edge, s_label):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -376,8 +427,14 @@ class BiaffineSrlModel(nn.Module):
             ~torch.Tensor, ~torch.Tensor:
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
-
-        return s_egde.argmax(-1), s_label.argmax(-1)
+        return s_edge.argmax(-1), s_label.argmax(-1)
+        # if(not self.args.use_pred):
+        #     # if(not self.args.sig):
+        #     return s_edge.argmax(-1), s_label.argmax(-1)
+        #     # else:
+        #     #     return s_edge.ge(0).long(), s_label.argmax(-1)
+        # else:
+        #     return s_edge.argmax(-1), s_label[..., :-1].argmax(-1)
 
 
 class VISrlModel(BiaffineSrlModel):
@@ -696,7 +753,7 @@ class VISrlModel(BiaffineSrlModel):
         # label_h = self.mlp_label_h(x)
 
         # # [batch_size, seq_len, seq_len]
-        # s_egde = self.edge_attn(un_d, un_h)
+        # s_edge = self.edge_attn(un_d, un_h)
         # # [batch_size, seq_len, seq_len, n_labels]
         # s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
         # s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
@@ -708,7 +765,7 @@ class VISrlModel(BiaffineSrlModel):
         # # [batch_size, seq_len, seq_len, n_labels]
         # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        # return s_egde, s_sib, s_cop, s_grd, s_label
+        # return s_edge, s_sib, s_cop, s_grd, s_label
 
         edge_d = self.mlp_un_d(x)
         edge_h = self.mlp_un_h(x)
@@ -719,7 +776,7 @@ class VISrlModel(BiaffineSrlModel):
         label_d = self.mlp_label_d(x)
 
         # [batch_size, seq_len, seq_len]
-        s_egde = self.edge_attn(edge_d, edge_h)
+        s_edge = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
         s_sib = self.sib_attn(pair_d, pair_d, pair_h)
         s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
@@ -733,12 +790,12 @@ class VISrlModel(BiaffineSrlModel):
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_egde, s_sib, s_cop, s_grd, s_label
+        return s_edge, s_sib, s_cop, s_grd, s_label
 
-    def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, edges, labels, mask):
+    def loss(self, s_edge, s_sib, s_cop, s_grd, s_label, edges, labels, mask):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
                 Scores of all possible dependent-head-sibling triples.
@@ -761,7 +818,7 @@ class VISrlModel(BiaffineSrlModel):
         """
 
         edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.vi((s_egde, s_sib, s_cop, s_grd), mask,
+        edge_loss, marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask,
                                        edge_mask.long())
         # print(s_label[edge_mask].shape, labels[edge_mask].shape)
         if (edge_mask.any()):
@@ -772,10 +829,10 @@ class VISrlModel(BiaffineSrlModel):
         else:
             return edge_loss, marginals
 
-    def decode(self, s_egde, s_label):
+    def decode(self, s_edge, s_label):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -785,5 +842,5 @@ class VISrlModel(BiaffineSrlModel):
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        # return s_egde.argmax(-1), s_label.argmax(-1)
-        return s_label.argmax(-1).masked_fill_(s_egde.lt(0.5), -1)
+        # return s_edge.argmax(-1), s_label.argmax(-1)
+        return s_label.argmax(-1).masked_fill_(s_edge.lt(0.5), -1)

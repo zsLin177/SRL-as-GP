@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn as nn
-
+# from opt_einsum import contract
 
 class Biaffine(nn.Module):
     r"""

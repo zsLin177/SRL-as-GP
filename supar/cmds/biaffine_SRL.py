@@ -65,6 +65,19 @@ def main():
     subparser.add_argument('--split',
                            action='store_true',
                            help='whether to use different mlp for predicate and arg')
+    subparser.add_argument('--use_pred',
+                           action='store_true',
+                           help='whether to use predicted edges to train')
+    subparser.add_argument('--min_freq',
+                           default=7,
+                           type=int,
+                           help='The minimum frequency needed to include a token in the vocabulary')
+    subparser.add_argument('--repr_gold',
+                           action='store_true',
+                           help='whether to use gold predicates during train to repr label')
+    # subparser.add_argument('--sig',
+    #                        action='store_true',
+    #                        help='whether to use sigmod during edge')
     # subparser.add_argument('--dev_gold',
     #                        default='data/conll05-original-style/sc-dev.final')
     # subparser.add_argument('--dev_pred',

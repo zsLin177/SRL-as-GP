@@ -307,7 +307,10 @@ class BiaffineSrlParser(Parser):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            if(self.args.repr_gold):
+                s_edge, s_label = self.model(words, feats, edges)
+            else:
+                s_edge, s_label = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -374,6 +377,7 @@ class BiaffineSrlParser(Parser):
         preds = {'labels': charts}
         if self.args.prob:
             preds['probs'] = probs
+        # pdb.set_trace()
 
         return preds
 
@@ -387,7 +391,6 @@ class BiaffineSrlParser(Parser):
                   'weight_decay': 3e-9
               },
               scheduler_args={'gamma': .75**(1 / 5000)},
-              min_freq=7,
               fix_len=20,
               **kwargs):
         r"""
@@ -461,6 +464,8 @@ class BiaffineSrlParser(Parser):
         if LEMMA is not None:
             LEMMA.build(train)
         LABEL.build(train)
+        if(args.use_pred):
+            LABEL.vocab.extend(['Other'])
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),

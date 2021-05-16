@@ -121,6 +121,9 @@ def produce_column_3(relas, prd_idx):
         elif(rel == ['[prd]']):
             column.append('*')
             i += 1
+        elif(rel == ['Other']):
+            column.append('*')
+            i += 1
         elif (len(rel) == 0):
             column.append('*')
             i += 1
@@ -136,7 +139,7 @@ def produce_column_3(relas, prd_idx):
                 # labels = {}
                 # labels[label] = 1
                 while (i < len(relas)):
-                    if (len(relas[i]) == 0):
+                    if (len(relas[i]) == 0 or relas[i] == ['Other']):
                         i += 1
                         continue
                     else:
