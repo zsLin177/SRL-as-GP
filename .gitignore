@@ -25,6 +25,11 @@ results
 *.07
 *pred
 *.txt
+*.final
+*-dev
+*-wsj
+*-brown
+tgt_*
 
 # pycache
 __pycache__

@@ -387,3 +387,15 @@ class ChartField(Field):
             ]
         charts = [torch.tensor(chart) for chart in charts]
         return charts
+
+class SpanSrlFiled(Field):
+    def build(self, vocab):
+        # use label field vocab
+        self.vocab = vocab
+    def transform(self, charts):
+        charts = [self.preprocess(chart) for chart in charts]
+        if self.use_vocab:
+            charts = [[[[self.vocab[i] if i is not None else -1 for i in row] for row in pred] for pred in chart] for chart in charts]
+        charts = [torch.tensor(chart) for chart in charts]
+        return charts
+    

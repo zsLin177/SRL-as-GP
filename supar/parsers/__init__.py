@@ -8,7 +8,8 @@ from .semantic_dependency import (BiaffineSemanticDependencyParser,
                                   VISemanticDependencyParser)
 
 from .srl import (BiaffineSrlParser,
-                VISrlParser)
+                VISrlParser,
+                BiaffineSpanSrlParser)
 
 __all__ = ['BiaffineDependencyParser',
            'CRFNPDependencyParser',
@@ -19,4 +20,5 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser',
            'BiaffineSrlParser',
-           'VISrlParser']
+           'VISrlParser',
+           'BiaffineSpanSrlParser']

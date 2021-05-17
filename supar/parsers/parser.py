@@ -44,7 +44,7 @@ def change2(source_file, tgt_file):
             relas = line_lst[8].split('|')
             for rela in relas:
                 head, rel = rela.split(':')
-                if (head == '0'):
+                if (head == '0' and rel != 'Other'):
                     prd_map[i] = len(prd_map) + 1
                     break
 
