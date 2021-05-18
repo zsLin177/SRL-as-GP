@@ -925,6 +925,7 @@ class BiaffineSpanSrlModel(nn.Module):
     def __init__(self,
                  n_words,
                  n_labels,
+                 n_span_labels,
                  use_pred=False,
                  split=False,
                  encoder='lstm',
@@ -948,6 +949,8 @@ class BiaffineSpanSrlModel(nn.Module):
                  lstm_dropout=.33,
                  n_mlp_edge=600,
                  n_mlp_label=600,
+                 n_prd=600,
+                 prd_dropout=0.33,
                  edge_mlp_dropout=.25,
                  label_mlp_dropout=.33,
                  interpolation=0.1,
@@ -1017,6 +1020,15 @@ class BiaffineSpanSrlModel(nn.Module):
                                     n_out=n_mlp_edge,
                                     dropout=edge_mlp_dropout,
                                     activation=False)
+            self.mlp_prd = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_prd,
+                                    dropout=prd_dropout,
+                                    activation=False)
+            self.mlp_arg = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_prd//2,
+                                    dropout=prd_dropout,
+                                    activation=False)
+
             if(not split):
                 self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
                                         n_out=n_mlp_label,
@@ -1079,6 +1091,11 @@ class BiaffineSpanSrlModel(nn.Module):
         # if(not use_pred):
         self.label_attn = Biaffine(n_in=n_mlp_label,
                                 n_out=n_labels,
+                                bias_x=True,
+                                bias_y=True)
+        
+        self.span_attn = Biaffine(n_in=n_prd,
+                                n_out=n_span_labels,
                                 bias_x=True,
                                 bias_y=True)
 
@@ -1191,15 +1208,38 @@ class BiaffineSpanSrlModel(nn.Module):
 
         return s_edge, s_label, x
     
-    def span_loss(self, pred_mask, spans, encoder_out):
+    def span_loss(self, pred_mask, pad_mask, spans, encoder_out):
         """[compute span loss]
 
         Args:
             pred_mask ([tensor]): [batch_size, seq_len]
+            pad_mask ([tensor]): [batch_size, seq_len, seq_len]
             spans ([tensor]): [batch_size, seq_len, seq_len, seq_len]
             encoder_out ([tensor]): [batch_size, seq_len, 2*lstm_dim]
         """
-        pass
+        batch_size, seq_len, _ = pad_mask.shape
+        # [batch_size, seq_len, seq_len, seq_len]
+        upper_mask = torch.ones_like(spans).triu_(0).gt(0)
+        span_mask = spans.gt(-1) & pad_mask.unsqueeze(1).expand(-1, seq_len, -1, -1)
+        final_mask = upper_mask & span_mask
+        # [1,2,3,4,...] k
+        target_label = spans[final_mask]
+        k = target_label.shape[0]
+        # [k, 4]
+        source = torch.nonzero(final_mask == 1)
+        batch_idx, prd_idx, ss_idx, se_idx = source[:, 0], source[:, 1], source[:, 2], source[:, 3]
+        # [k, n_prd]
+        prd_repr = self.mlp_prd(encoder_out[batch_idx, prd_idx])
+        # [k, n_prd//2]
+        arg_start_repr = self.mlp_arg(encoder_out[batch_idx, ss_idx])
+        arg_end_repr = self.mlp_arg(encoder_out[batch_idx, se_idx])
+        # [k, n_prd]
+        arg_repr = torch.cat((arg_start_repr+arg_end_repr, arg_start_repr-arg_end_repr), -1)
+        idx = torch.tensor([range(k)], device=pad_mask.device)
+        # [k, n_span_label]
+        score = self.span_attn(arg_repr.unsqueeze(0), prd_repr.unsqueeze(0)).permute(0, 2, 3, 1).squeeze(0)[idx, idx]
+        span_loss = self.criterion(score, target_label)
+        return span_loss
 
     def loss(self, s_edge, s_label, edges, labels, mask):
         r"""

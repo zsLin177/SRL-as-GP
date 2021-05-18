@@ -3,7 +3,7 @@ import pdb
 import subprocess
 import torch
 import torch.nn as nn
-from supar.models import (BiaffineSrlModel, BiaffineSpanSrlModel
+from supar.models import (BiaffineSrlModel, BiaffineSpanSrlModel,
                           VISrlModel)
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
@@ -303,14 +303,15 @@ class BiaffineSpanSrlParser(Parser):
 
         for words, *feats, edges, labels, spans in bar:
             self.optimizer.zero_grad()
-
+            # pdb.set_trace()
             mask1 = words.ne(self.WORD.pad_index)
             mask = mask1.unsqueeze(1) & mask1.unsqueeze(2)
             mask[:, 0] = 0
             pred_mask = mask1 & edges[..., 0].eq(1)
+            pred_mask[:, 0] = 0
             s_edge, s_label, encoder_out = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
-            span_loss = self.model.span_loss(pred_mask, spans, encoder_out)
+            span_loss = self.model.span_loss(pred_mask, mask, spans, encoder_out)
             loss += span_loss
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -447,8 +448,8 @@ class BiaffineSpanSrlParser(Parser):
                                 tokenize=tokenizer.tokenize)
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
-        LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        SPAN = SpanSrlFiled('spans', fn=CoNLL.get_spans)
+        LABEL = ChartField('labels', fn=CoNLL.get_BI_labels)
+        SPAN = SpanSrlFiled('spans', build_fn=CoNLL.get_span_labels, fn=CoNLL.get_spans)
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
                           POS=TAG,
@@ -467,10 +468,11 @@ class BiaffineSpanSrlParser(Parser):
         LABEL.build(train)
         if(args.use_pred):
             LABEL.vocab.extend(['Other'])
-        SPAN.build(LABEL.vocab)
+        SPAN.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
+            'n_span_labels': len(SPAN.vocab),
             'n_tags': len(TAG.vocab) if TAG is not None else None,
             'n_chars': len(CHAR.vocab) if CHAR is not None else None,
             'char_pad_index': CHAR.pad_index if CHAR is not None else None,
@@ -655,6 +657,7 @@ class BiaffineSrlParser(Parser):
         preds = {}
         charts, probs = [], []
         for words, *feats in progress_bar(loader):
+            # pdb.set_trace()
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0

@@ -235,6 +235,30 @@ class CoNLL(Transform):
                     edge, label = pair.split(':')
                     labels[i][int(edge)] = label
         return labels
+
+    @classmethod
+    def get_BI_labels(cls, sequence):
+        labels = [[None]*(len(sequence)+1) for _ in range(len(sequence)+1)]
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge == '0'):
+                        labels[i][int(edge)] = label
+                    else:
+                        labels[i][int(edge)] = label[0]
+        return labels
+    
+    @classmethod
+    def get_span_labels(cls, sequence):
+        labels = [[None]*(len(sequence)+1) for _ in range(len(sequence)+1)]
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge != '0'):
+                        labels[i][int(edge)] = label[2:]
+        return labels
     
     @classmethod
     def get_spans(cls, sequence):

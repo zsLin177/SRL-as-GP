@@ -389,9 +389,16 @@ class ChartField(Field):
         return charts
 
 class SpanSrlFiled(Field):
-    def build(self, vocab):
-        # use label field vocab
-        self.vocab = vocab
+    def __init__(self, name, build_fn, fn=None):
+        self.build_fn = build_fn
+        super().__init__(name, fn=fn)
+
+    def build(self, dataset, min_freq=1):
+        counter = Counter(i for chart in getattr(dataset, self.name)
+                          for row in self.build_fn(chart) for i in row
+                          if i is not None)
+
+        self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
     def transform(self, charts):
         charts = [self.preprocess(chart) for chart in charts]
         if self.use_vocab:

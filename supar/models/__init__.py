@@ -5,7 +5,7 @@ from .dependency import (BiaffineDependencyModel, CRF2oDependencyModel,
                          CRFDependencyModel, CRFNPDependencyModel)
 from .semantic_dependency import (BiaffineSemanticDependencyModel,
                                   VISemanticDependencyModel)
-from .semantic_role_labeling import (BiaffineSrlModel, BiaffineSpanSrlModel
+from .semantic_role_labeling import (BiaffineSrlModel, BiaffineSpanSrlModel,
                                     VISrlModel)
 
 __all__ = ['BiaffineDependencyModel',
