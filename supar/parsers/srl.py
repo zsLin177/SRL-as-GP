@@ -299,52 +299,52 @@ class BiaffineSpanSrlParser(Parser):
     def _train(self, loader):
         self.model.train()
 
-        bar, metric = progress_bar(loader), ChartMetric()
+        bar = progress_bar(loader)
 
-        for words, *feats, edges, labels, spans in bar:
-            self.optimizer.zero_grad()
+        for i, (words, *feats, edges, labels, spans) in enumerate(bar, 1):
+            
             # pdb.set_trace()
-            mask1 = words.ne(self.WORD.pad_index)
-            mask = mask1.unsqueeze(1) & mask1.unsqueeze(2)
+            mask = words.ne(self.WORD.pad_index)
+            mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            pred_mask = mask1 & edges[..., 0].eq(1)
-            pred_mask[:, 0] = 0
+            # pred_mask = mask1 & edges[..., 0].eq(1)
+            # pred_mask[:, 0] = 0
             s_edge, s_label, encoder_out = self.model(words, feats)
-            loss = self.model.loss(s_edge, s_label, edges, labels, mask)
-            span_loss = self.model.span_loss(pred_mask, mask, spans, encoder_out)
-            loss += span_loss
+            two_stage_loss = self.model.loss(s_edge, s_label, edges, labels, mask)
+            two_stage_loss = two_stage_loss / self.args.update_steps
+            span_loss = self.model.span_loss(mask, spans, encoder_out)
+            span_loss = span_loss / self.args.update_steps
+            loss = span_loss + two_stage_loss
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
-            bar.set_postfix_str(
-                f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
-            )
+            # edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            #        labels.masked_fill(~(edges.gt(0) & mask), -1))
+            # bar.set_postfix_str(
+            #     f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
+            # )
 
     @torch.no_grad()
     def _evaluate(self, loader):
         self.model.eval()
 
-        total_loss, metric = 0, SrlMetric()
-
-        for words, *feats, edges, labels in loader:
+        total_loss, metric = 0, ChartMetric()
+        prd_idx, B_idx, I_idx = self.LABEL.vocab.stoi['[prd]'], self.LABEL.vocab.stoi['B'], self.LABEL.vocab.stoi['I']
+        for words, *feats, edges, labels, spans in loader:
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
-            # loss = self.model.loss(s_edge, s_label, edges, labels, mask)
-            # total_loss += loss.item()
-
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-                   labels.masked_fill(~(edges.gt(0) & mask), -1))
-        # total_loss /= len(loader)
-
-        # return total_loss, metric
+            n_mask = mask.unsqueeze(1).expand(-1, words.shape[1], -1, -1)
+            s_edge, s_label, encoder_out = self.model(words, feats)
+            arg_preds = self.model.decode(s_edge, s_label, encoder_out, mask, prd_idx, B_idx, I_idx)
+            metric(arg_preds,
+                   spans.masked_fill(~n_mask, -1))
+        
         return metric
 
     @torch.no_grad()

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from .affine import Biaffine, Triaffine
+from .affine import Biaffine, Triaffine, SmallBiaffine
 from .bert import BertEmbedding
 from .char_lstm import CharLSTM
 from .dropout import IndependentDropout, SharedDropout
@@ -18,5 +18,5 @@ __all__ = [
     'CRFConstituency', 'CRFDependency', 'IndependentDropout',
     'LBPSemanticDependency', 'MatrixTree', 'MFVISemanticDependency',
     'ScalarMix', 'SharedDropout', 'Triaffine', 'Highway_Concat_BiLSTM',
-    'SelfAttentionEncoder'
+    'SelfAttentionEncoder', 'SmallBiaffine'
 ]

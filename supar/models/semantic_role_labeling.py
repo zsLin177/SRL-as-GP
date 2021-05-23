@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder
-from supar.modules.affine import Biaffine, Triaffine
+from supar.modules.affine import Biaffine, Triaffine, SmallBiaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.variational_inference import (LBPSemanticDependency,
                                                  MFVISemanticDependency)
@@ -1094,7 +1094,7 @@ class BiaffineSpanSrlModel(nn.Module):
                                 bias_x=True,
                                 bias_y=True)
         
-        self.span_attn = Biaffine(n_in=n_prd,
+        self.span_attn = SmallBiaffine(n_in=n_prd,
                                 n_out=n_span_labels,
                                 bias_x=True,
                                 bias_y=True)
@@ -1208,11 +1208,10 @@ class BiaffineSpanSrlModel(nn.Module):
 
         return s_edge, s_label, x
     
-    def span_loss(self, pred_mask, pad_mask, spans, encoder_out):
+    def span_loss(self, pad_mask, spans, encoder_out):
         """[compute span loss]
 
         Args:
-            pred_mask ([tensor]): [batch_size, seq_len]
             pad_mask ([tensor]): [batch_size, seq_len, seq_len]
             spans ([tensor]): [batch_size, seq_len, seq_len, seq_len]
             encoder_out ([tensor]): [batch_size, seq_len, 2*lstm_dim]
@@ -1235,9 +1234,9 @@ class BiaffineSpanSrlModel(nn.Module):
         arg_end_repr = self.mlp_arg(encoder_out[batch_idx, se_idx])
         # [k, n_prd]
         arg_repr = torch.cat((arg_start_repr+arg_end_repr, arg_start_repr-arg_end_repr), -1)
-        idx = torch.tensor([range(k)], device=pad_mask.device)
+        # idx = torch.tensor([range(k)], device=pad_mask.device)
         # [k, n_span_label]
-        score = self.span_attn(arg_repr.unsqueeze(0), prd_repr.unsqueeze(0)).permute(0, 2, 3, 1).squeeze(0)[idx, idx]
+        score = self.span_attn(arg_repr, prd_repr).permute(1, 0)
         span_loss = self.criterion(score, target_label)
         return span_loss
 
@@ -1298,23 +1297,98 @@ class BiaffineSpanSrlModel(nn.Module):
             else:
                 return edge_loss
 
-    def decode(self, s_edge, s_label):
-        r"""
+    def decode(self, s_edge, s_label, encoder_out, pad_mask, prd_idx, B_idx, I_idx):
+        """[summary]
+
         Args:
-            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
-                Scores of all possible edges.
-            s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
-                Scores of all possible labels on each edge.
+            s_edge ([type]): [batch_size, seq_len, seq_len, 2]
+            s_label ([type]): [batch_size, seq_len, seq_len, n_bip_labels]
+            x ([type]): [batch_size, seq_len, 2*lstm_dim]
+            pad_mask ([type]): [batch_size, seq_len, seq_len]
 
         Returns:
-            ~torch.Tensor, ~torch.Tensor:
-                Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
+            spans [type]: [batch_size, seq_len, seq_len, seq_len]
         """
-        return s_edge.argmax(-1), s_label.argmax(-1)
-        # if(not self.args.use_pred):
-        #     # if(not self.args.sig):
-        #     return s_edge.argmax(-1), s_label.argmax(-1)
-        #     # else:
-        #     #     return s_edge.ge(0).long(), s_label.argmax(-1)
-        # else:
-        #     return s_edge.argmax(-1), s_label[..., :-1].argmax(-1)
+        batch_size, seq_len, _ = pad_mask.shape
+        # [batch_size, seq_len, seq_len]
+        edge_pred = s_edge.argmax(-1)
+        edge_pred.masked_fill_(~pad_mask, 0)
+        bip_pred = s_label.argmax(-1)
+        bip_pred.masked_fill_(~pad_mask, -1)
+        # 没有预测到边的地方bip也不应该有
+        bip_pred.masked_fill_(edge_pred.eq(0), -1)
+        # 和root相连的边强制设置为[prd]
+        # [batch_size, seq_len]
+        pred_mask = edge_pred[..., 0].eq(1)
+        pred_mask[:, 0] = 0
+        tmp_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).clone()
+        tmp_mask[..., 1:] = 0
+        bip_pred.masked_fill_(tmp_mask, prd_idx)
+        k = pred_mask.sum()
+        pred_idxs = pred_mask.nonzero()
+        batch_idx = pred_idxs[:, 0]
+        pred_word_idx = pred_idxs[:, 1]
+        # [k, seq_len]
+        predicate_bi_seq = bip_pred[batch_idx, :, pred_word_idx]
+        # 把[prd]去掉
+        predicate_bi_seq.masked_fill_(predicate_bi_seq.eq(prd_idx), -1)
+
+        # 没办法，暂时下面不会batch化
+        b_idx = []
+        s_idx = []
+        e_idx = []
+        lst = predicate_bi_seq.tolist()
+        for i in range(k):
+            seq = lst[i][1:]  # [seq_len-1]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                else:
+                    span_start = j
+                    span_end = -1
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] == B_idx):
+                            break
+                        else:
+                            span_end = j
+                            j += 1
+                            break
+                    b_idx.append(i)
+                    if(span_end != -1):
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_end+1)
+                    else:
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_start+1)
+        k_spans = -torch.ones((k, seq_len, seq_len), device=encoder_out.device).long()
+        k_spans[b_idx, s_idx, e_idx] = 1
+        spans = -torch.ones((batch_size, seq_len, seq_len, seq_len), device=encoder_out.device).long()
+        back_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).unsqueeze(-1).expand(-1, -1, -1,seq_len)
+        spans = spans.masked_scatter(back_mask, k_spans)
+
+        upper_mask = torch.ones_like(spans).triu_(0).gt(0)
+        span_mask = spans.eq(1) & pad_mask.unsqueeze(1).expand(-1, seq_len, -1, -1)
+        final_mask = upper_mask & span_mask
+        k = final_mask.sum()  # now num of arguments
+        # [k, 4]
+        source = torch.nonzero(final_mask == 1)
+        batch_idx, prd_idx, ss_idx, se_idx = source[:, 0], source[:, 1], source[:, 2], source[:, 3]
+        prd_repr = self.mlp_prd(encoder_out[batch_idx, prd_idx])
+        # [k, n_prd//2]
+        arg_start_repr = self.mlp_arg(encoder_out[batch_idx, ss_idx])
+        arg_end_repr = self.mlp_arg(encoder_out[batch_idx, se_idx])
+        # [k, n_prd]
+        arg_repr = torch.cat((arg_start_repr+arg_end_repr, arg_start_repr-arg_end_repr), -1)
+        # idx = torch.tensor([range(k)], device=pad_mask.device)
+        # [k, n_span_label]
+        pdb.set_trace()
+        score = self.span_attn(arg_repr, prd_repr).permute(1, 0)
+
+        pred_span_label = score.argmax(-1)
+        spans = spans.masked_scatter(final_mask, pred_span_label)
+        return spans
