@@ -305,6 +305,7 @@ class BiaffineSpanSrlParser(Parser):
             
             # pdb.set_trace()
             mask = words.ne(self.WORD.pad_index)
+            # print(mask.shape)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             # pred_mask = mask1 & edges[..., 0].eq(1)
@@ -316,6 +317,7 @@ class BiaffineSpanSrlParser(Parser):
             span_loss = span_loss / self.args.update_steps
             loss = span_loss + two_stage_loss
             loss.backward()
+            # pdb.set_trace()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
             if i % self.args.update_steps == 0:
                 self.optimizer.step()
@@ -342,6 +344,7 @@ class BiaffineSpanSrlParser(Parser):
             n_mask = mask.unsqueeze(1).expand(-1, words.shape[1], -1, -1)
             s_edge, s_label, encoder_out = self.model(words, feats)
             arg_preds = self.model.decode(s_edge, s_label, encoder_out, mask, prd_idx, B_idx, I_idx)
+            # pdb.set_trace()
             metric(arg_preds,
                    spans.masked_fill(~n_mask, -1))
         
