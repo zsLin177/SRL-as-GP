@@ -131,8 +131,12 @@ def produce_column_3(relas, prd_idx):
             s_rel = rel[0]
             position_tag = s_rel[0]
             label = s_rel[2:]  # label直接按第一个边界的label
-            if (position_tag in ('B', 'I')):
-                # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
+            if(position_tag == 'I'):
+                column.append('*')   # 直接把冲突的I删掉
+                i += 1
+            # if (position_tag in ('B', 'I')):
+            else:
+                
                 span_start = i
                 span_end = -1
                 i += 1
