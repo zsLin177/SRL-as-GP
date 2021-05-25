@@ -405,4 +405,12 @@ class SpanSrlFiled(Field):
             charts = [[[[self.vocab[i] if i is not None else -1 for i in row] for row in pred] for pred in chart] for chart in charts]
         charts = [torch.tensor(chart) for chart in charts]
         return charts
+
+    @property
+    def pad_index(self):
+        if self.pad is None:
+            return -1
+        if hasattr(self, 'vocab'):
+            return self.vocab[self.pad]
+        return self.specials.index(self.pad)
     

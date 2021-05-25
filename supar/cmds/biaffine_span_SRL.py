@@ -59,6 +59,10 @@ def main():
                            default=0.1,
                            type=float,
                            help='Constant to even out the label/edge loss')
+    subparser.add_argument('--weight',
+                           default=0.5,
+                           type=float,
+                           help='Constant to even out the 3-stage/first-2-stage')
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
     subparser.add_argument('--encoder', default='lstm')
     subparser.add_argument('--clip', default=5.0, type=float)
@@ -68,6 +72,9 @@ def main():
     subparser.add_argument('--use_pred',
                            action='store_true',
                            help='whether to use predicted edges to train')
+    subparser.add_argument('--n_prd',
+                           default=600,
+                           type=int)
     subparser.add_argument('--min_freq',
                            default=7,
                            type=int,

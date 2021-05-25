@@ -313,9 +313,13 @@ class BiaffineSpanSrlParser(Parser):
             s_edge, s_label, encoder_out = self.model(words, feats)
             two_stage_loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             two_stage_loss = two_stage_loss / self.args.update_steps
-            span_loss = self.model.span_loss(mask, spans, encoder_out)
+            span_loss, k = self.model.span_loss(mask, spans, encoder_out)
             span_loss = span_loss / self.args.update_steps
-            loss = span_loss + two_stage_loss
+            # k = 0
+            if(k<=0):
+                loss = two_stage_loss
+            else:
+                loss = self.args.weight * span_loss + (1-self.args.weight) * two_stage_loss
             loss.backward()
             # pdb.set_trace()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -327,15 +331,16 @@ class BiaffineSpanSrlParser(Parser):
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
             # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
             #        labels.masked_fill(~(edges.gt(0) & mask), -1))
-            # bar.set_postfix_str(
-            #     f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
-            # )
+            bar.set_postfix_str(
+                f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f}"
+            )
 
     @torch.no_grad()
     def _evaluate(self, loader):
         self.model.eval()
 
         total_loss, metric = 0, ChartMetric()
+        metric2 = SrlMetric()
         prd_idx, B_idx, I_idx = self.LABEL.vocab.stoi['[prd]'], self.LABEL.vocab.stoi['B'], self.LABEL.vocab.stoi['I']
         for words, *feats, edges, labels, spans in loader:
             mask = words.ne(self.WORD.pad_index)
@@ -347,8 +352,34 @@ class BiaffineSpanSrlParser(Parser):
             # pdb.set_trace()
             metric(arg_preds,
                    spans.masked_fill(~n_mask, -1))
+            edge_preds, label_preds = s_edge.argmax(-1), s_label.argmax(-1)
+            metric2(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+                   labels.masked_fill(~(edges.gt(0) & mask), -1))
         
-        return metric
+        return metric, metric2
+    
+    @torch.no_grad()
+    def _evaluate2(self, loader):
+        self.model.eval()
+
+        total_loss, metric = 0, ChartMetric()
+        metric2 = SrlMetric()
+        prd_idx, B_idx, I_idx = self.LABEL.vocab.stoi['[prd]'], self.LABEL.vocab.stoi['B'], self.LABEL.vocab.stoi['I']
+        for words, *feats, edges, labels, spans in loader:
+            mask = words.ne(self.WORD.pad_index)
+            mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            mask[:, 0] = 0
+            # n_mask = mask.unsqueeze(1).expand(-1, words.shape[1], -1, -1)
+            s_edge, s_label, encoder_out = self.model(words, feats)
+            # arg_preds = self.model.decode(s_edge, s_label, encoder_out, mask, prd_idx, B_idx, I_idx)
+            # pdb.set_trace()
+            # metric(arg_preds,
+            #        spans.masked_fill(~n_mask, -1))
+            edge_preds, label_preds = s_edge.argmax(-1), s_label.argmax(-1)
+            metric2(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+                   labels.masked_fill(~(edges.gt(0) & mask), -1))
+        
+        return metric2
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -484,7 +515,8 @@ class BiaffineSpanSrlParser(Parser):
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
             'interpolation': interpolation,
-            'encoder': args.encoder
+            'encoder': args.encoder,
+            'n_prd': args.n_prd
         })
         logger.info(f"{transform}")
         logger.info("Building the model")

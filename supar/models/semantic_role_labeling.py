@@ -1224,6 +1224,8 @@ class BiaffineSpanSrlModel(nn.Module):
         # [1,2,3,4,...] k
         target_label = spans[final_mask]
         k = target_label.shape[0]
+        if(k<=0):
+            return 0, k
         # [k, 4]
         source = final_mask.nonzero()
         batch_idx, prd_idx, ss_idx, se_idx = source[:, 0], source[:, 1], source[:, 2], source[:, 3]
@@ -1238,7 +1240,7 @@ class BiaffineSpanSrlModel(nn.Module):
         # [k, n_span_label]
         score = self.span_attn(arg_repr, prd_repr).permute(1, 0)
         span_loss = self.criterion(score, target_label)
-        return span_loss
+        return span_loss, k
 
     def loss(self, s_edge, s_label, edges, labels, mask):
         r"""
@@ -1325,11 +1327,13 @@ class BiaffineSpanSrlModel(nn.Module):
         # [batch_size, seq_len]
         pred_mask = edge_pred[..., 0].eq(1)
         pred_mask[:, 0] = 0
+        
         # tmp_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).clone()
         # tmp_mask[..., 1:] = 0
         # # bip_pred.masked_fill_(tmp_mask, prd_idx)
         # bip_pred = bip_pred.masked_fill(tmp_mask, prd_idx)
         # pdb.set_trace()
+
         k = pred_mask.sum()
         if(k <= 0):
             return -torch.ones((batch_size, seq_len, seq_len, seq_len), device=encoder_out.device).long()
@@ -1355,6 +1359,132 @@ class BiaffineSpanSrlModel(nn.Module):
             while(j < length):
                 if(seq[j] == -1):
                     j += 1
+                elif(seq[j] == I_idx):
+                    j += 1  # delete conflict I (it is so helpful)
+                    # maybe set a gap p(I_idx)>0.5 
+                else:
+                    span_start = j
+                    span_end = -1
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] == B_idx):
+                            break
+                        else:
+                            span_end = j
+                            j += 1
+                            break
+                    b_idx.append(i)
+                    if(span_end != -1):
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_end+1)
+                    else:
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_start+1)
+        # pdb.set_trace()
+        k_spans = -torch.ones((k, seq_len, seq_len), device=encoder_out.device).long()
+        k_spans[b_idx, s_idx, e_idx] = 1
+        spans = -torch.ones((batch_size, seq_len, seq_len, seq_len), device=encoder_out.device).long()
+        # pdb.set_trace()
+        back_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).unsqueeze(-1).expand(-1, -1, -1,seq_len)
+        spans = spans.masked_scatter(back_mask, k_spans)
+
+        upper_mask = torch.ones_like(spans).triu_(0).gt(0)
+        span_mask = spans.eq(1) & pad_mask.unsqueeze(1).expand(-1, seq_len, -1, -1)
+        final_mask = upper_mask & span_mask
+        k = final_mask.sum()  # now num of arguments
+        if(k <= 0):
+            return -torch.ones((batch_size, seq_len, seq_len, seq_len), device=encoder_out.device).long()
+        # [k, 4]
+        source = final_mask.nonzero()
+        # pdb.set_trace()
+        new_batch_idx, new_prd_idx, ss_idx, se_idx = source[:, 0], source[:, 1], source[:, 2], source[:, 3]
+        prd_repr = self.mlp_prd(encoder_out[new_batch_idx, new_prd_idx])
+        # [k, n_prd//2]
+        arg_start_repr = self.mlp_arg(encoder_out[new_batch_idx, ss_idx])
+        arg_end_repr = self.mlp_arg(encoder_out[new_batch_idx, se_idx])
+        # [k, n_prd]
+        arg_repr = torch.cat((arg_start_repr+arg_end_repr, arg_start_repr-arg_end_repr), -1)
+        # idx = torch.tensor([range(k)], device=pad_mask.device)
+        # [k, n_span_label]
+        # pdb.set_trace()
+        score = self.span_attn(arg_repr, prd_repr).permute(1, 0)
+
+        pred_span_label = score.argmax(-1)
+        spans = spans.masked_scatter(final_mask, pred_span_label)
+        return spans
+
+    def decode2(self, s_edge, s_label, encoder_out, pad_mask, prd_idx, B_idx, I_idx):
+        """set threshold to fix comflict
+
+        Args:
+            s_edge ([type]): [batch_size, seq_len, seq_len, 2]
+            s_label ([type]): [batch_size, seq_len, seq_len, n_bip_labels]
+            x ([type]): [batch_size, seq_len, 2*lstm_dim]
+            pad_mask ([type]): [batch_size, seq_len, seq_len]
+
+        Returns:
+            spans [type]: [batch_size, seq_len, seq_len, seq_len]
+        """
+        # pdb.set_trace()
+        batch_size, seq_len, _ = pad_mask.shape
+        # [batch_size, seq_len, seq_len]
+        edge_pred = s_edge.argmax(-1)
+        # edge_pred.masked_fill_(~pad_mask, 0)
+        edge_pred = edge_pred.masked_fill(~pad_mask, 0)
+        bip_pred = s_label.argmax(-1)
+        # for threshold
+        p_label = s_label.softmax(-1)
+        # [batch_size, seq_len, seq_len]
+        label_score = torch.gather(p_label, -1, bip_pred.unsqueeze(-1)).squeeze(-1)
+        # bip_pred.masked_fill_(~pad_mask, -1)
+        bip_pred = bip_pred.masked_fill(~pad_mask, -1)
+        # 没有预测到边的地方bip也不应该有
+        # bip_pred.masked_fill_(edge_pred.eq(0), -1)
+        bip_pred = bip_pred.masked_fill(edge_pred.eq(0), -1)
+        # 和root相连的边强制设置为[prd]
+        # [batch_size, seq_len]
+        pred_mask = edge_pred[..., 0].eq(1)
+        pred_mask[:, 0] = 0
+        
+        # tmp_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).clone()
+        # tmp_mask[..., 1:] = 0
+        # # bip_pred.masked_fill_(tmp_mask, prd_idx)
+        # bip_pred = bip_pred.masked_fill(tmp_mask, prd_idx)
+        # pdb.set_trace()
+
+        k = pred_mask.sum()
+        if(k <= 0):
+            return -torch.ones((batch_size, seq_len, seq_len, seq_len), device=encoder_out.device).long()
+        pred_idxs = pred_mask.nonzero()
+        # pdb.set_trace()
+        batch_idx = pred_idxs[:, 0]
+        pred_word_idx = pred_idxs[:, 1]
+        # [k, seq_len]
+        predicate_bi_seq = bip_pred[batch_idx, :, pred_word_idx]
+        predicate_score_seq = label_score[batch_idx, :, pred_word_idx]
+        # 把[prd]去掉
+        # predicate_bi_seq.masked_fill_(predicate_bi_seq.eq(prd_idx), -1)
+        predicate_bi_seq = predicate_bi_seq.masked_fill(predicate_bi_seq.eq(prd_idx), -1)
+
+        # 没办法，暂时下面不会batch化
+        b_idx = []
+        s_idx = []
+        e_idx = []
+        lst = predicate_bi_seq.tolist()
+        lst_score = predicate_score_seq.tolist()
+        for i in range(k):
+            seq = lst[i][1:]  # [seq_len-1]
+            pro_seq = lst_score[i][1:]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                elif(seq[j] == I_idx and pro_seq[j] < 0.5):
+                    j += 1  # delete conflict I (it is so helpful)
+                    # maybe set a gap p(I_idx)<0.5 
                 else:
                     span_start = j
                     span_end = -1
