@@ -445,11 +445,13 @@ class VISrlParser(BiaffineSrlParser):
             # self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
+            mask2 = mask.clone()
+            mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           s_label, edges, labels, mask)
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -480,13 +482,15 @@ class VISrlParser(BiaffineSrlParser):
 
         for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
+            mask2 = mask.clone()
+            mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
             # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
             #                                s_label, edges, labels, mask)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           s_label, edges, labels, mask)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2)
             # total_loss += loss.item()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -511,14 +515,16 @@ class VISrlParser(BiaffineSrlParser):
         for words, *feats, edges, labels in progress_bar(loader):
             # pdb.set_trace()
             word_mask = words.ne(self.args.pad_index)
+            mask2 = word_mask.clone()
+            mask2[:, 0] = 0
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           s_label, edges, labels, mask)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2)
             label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)
             preds['labels'].extend(chart[1:i, :i].tolist()
