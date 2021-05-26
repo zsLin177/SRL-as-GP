@@ -19,172 +19,6 @@ from torch.optim.lr_scheduler import _LRScheduler
 
 logger = get_logger(__name__)
 
-def change2(source_file, tgt_file):
-    # change simple crosstag conllu to target type
-    with open(source_file, 'r') as f:
-        lines = [line.strip() for line in f]
-    sentences = []
-    start, i = 0, 0
-    for line in lines:
-        if not line:
-            sentences.append(lines[start:i])
-            start = i + 1
-        i += 1
-
-    new_sentence_lsts = []
-    for sentence in sentences:
-        sentence_lst = []
-        for line in sentence:
-            sentence_lst.append(line.split('\t'))
-        # sentence_lst:[line_lst,...,] line_lst:[num, word, lemma, _, pos, _, _, _, relas, _]
-
-        # 先找出所有的谓词
-        num_words = len(sentence_lst)
-        prd_map = {}  # 33:1, 44:2
-        for i, line_lst in enumerate(sentence_lst, 1):
-            if (line_lst[8] == '_'):
-                continue
-            relas = line_lst[8].split('|')
-            for rela in relas:
-                head, rel = rela.split(':')
-                if (head == '0'):
-                    prd_map[i] = len(prd_map) + 1
-                    break
-
-        arc_values = []
-        # [[[a0],[a0]],]
-        for i, line_lst in enumerate(sentence_lst, 1):
-            if (line_lst[8] == '_'):
-                arc_value = [[] for j in range(len(prd_map))]
-                arc_values.append(arc_value)
-            else:
-                relas = line_lst[8].split('|')
-                arc_value = [[] for j in range(len(prd_map))]
-                for rela in relas:
-                    head, rel = rela.split(':')
-                    head_idx = int(head)
-                    if (head_idx in prd_map):
-                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
-                        arc_value[prd_map[head_idx] - 1].append(rel)
-                        # 应该只有一个，一个词根一个谓词只能有一个关系
-                arc_values.append(arc_value)
-
-        re_prd_map = {}  # 1:33, 2:44
-        for key, value in prd_map.items():
-            re_prd_map[value] = key
-
-        new_columns = []
-        column_1 = []
-        for i, line_lst in enumerate(sentence_lst, 1):
-            if (i in prd_map):
-                column_1.append(line_lst[2])
-            else:
-                column_1.append('-')
-        new_columns.append(column_1)
-
-        for key, value in re_prd_map.items():
-            this_prd_arc = [
-                word_arc_lsts[key - 1] for word_arc_lsts in arc_values
-            ]
-            # [[rel], [rel], [],...]
-            this_prd_idx = value  # start from 1
-            this_column = produce_column_3(this_prd_arc, this_prd_idx)
-            new_columns.append(this_column)
-
-        new_sentence_lst = []
-        num_column = len(new_columns)
-        for i in range(num_words):
-            new_line_lst = []
-            for j in range(num_column):
-                new_line_lst.append(new_columns[j][i])
-            new_sentence_lst.append(new_line_lst)
-        new_sentence_lsts.append(new_sentence_lst)
-
-    with open(tgt_file, 'w') as f:
-        for new_sentence_lst in new_sentence_lsts:
-            for line_lst in new_sentence_lst:
-                f.write(' '.join(line_lst) + '\n')
-            f.write('\n')
-
-
-def produce_column_3(relas, prd_idx):
-    # used for simple crosstag
-    # 暂时是直接按照预测的B、I进行划分
-    column = []
-    # span_start = -1
-    i = 0
-    while (i < len(relas)):
-        rel = relas[i]
-        # print(i)
-        # print(relas)
-        if ((i + 1) == prd_idx):
-            # 其实谓词不影响
-            column.append('(V*)')
-            i += 1
-        elif (len(rel) == 0):
-            column.append('*')
-            i += 1
-        else:
-            s_rel = rel[0]
-            position_tag = s_rel[0]
-            label = s_rel[2:]  # label直接按第一个边界的label
-            if (position_tag in ('B', 'I')):
-                # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
-                span_start = i
-                span_end = -1
-                i += 1
-                # labels = {}
-                # labels[label] = 1
-                while (i < len(relas)):
-                    if (len(relas[i]) == 0):
-                        i += 1
-                        continue
-                    else:
-                        # relas[i][0][0] == 'B' or 'I'
-                        if (relas[i][0][0] == 'B'):
-                            break
-                        else:
-                            span_end = i
-                            label2 = relas[i][0][2:]  # 以后面那个作为label
-                            i += 1
-                            break
-                if (span_end != -1):
-                    if (label == label2):
-                        length = span_end - span_start + 1
-                        column.append('(' + label + '*')
-                        column += ['*'] * (length - 2)
-                        column.append('*' + ')')
-                    else:
-                        length = span_end - span_start + 1
-                        column += ['*'] * length
-                else:
-                    column.append('(' + label + '*' + ')')
-                    column += ['*'] * (i - 1 - span_start)
-    return column
-
-
-
-def get_results(gold_path, pred_path):
-    _SRL_CONLL_EVAL_SCRIPT = 'conll05-original-style/eval.sh'
-    tgt_temp_file = 'tgt_temp_file'
-    change2(pred_path, tgt_temp_file)
-    child = subprocess.Popen('sh {} {} {}'.format(
-        _SRL_CONLL_EVAL_SCRIPT, gold_path, tgt_temp_file), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    eval_info = child.communicate()[0]
-
-    child2 = subprocess.Popen('sh {} {} {}'.format(
-        _SRL_CONLL_EVAL_SCRIPT, pred_path, gold_path), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    eval_info2 = child2.communicate()[0]
-    # pdb.set_trace()
-    # temp = str(eval_info).strip().split("\\n")
-    conll_recall = float(str(eval_info).strip().split("\\n")[-42:][6].strip().split()[5])
-    conll_precision = float(str(eval_info2).strip().split("\\n")[-42:][6].strip().split()[5])
-    conll_f1 = 2 * conll_recall * conll_precision / (conll_recall + conll_precision + 1e-12)
-    lisa_f1 = float(str(eval_info).strip().split("\\n")[-42:][6].strip().split()[6])
-
-    return conll_f1, lisa_f1
-
-
 class VLR(_LRScheduler):
     def __init__(self, optimizer, warmup_steps=8000, last_epoch=-1):
         self.warmup_steps = warmup_steps
@@ -674,14 +508,17 @@ class VISrlParser(BiaffineSrlParser):
         self.model.eval()
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
-        for words, *feats in progress_bar(loader):
+        for words, *feats, edges, labels in progress_bar(loader):
+            # pdb.set_trace()
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_sib, s_cop, s_grd, s_label = self.model(words, feats)
-            s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
+            # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
+            loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           s_label, edges, labels, mask)
             label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)
             preds['labels'].extend(chart[1:i, :i].tolist()
@@ -708,7 +545,6 @@ class VISrlParser(BiaffineSrlParser):
                   'eps': 1e-12
               },
               scheduler_args={'gamma': .75**(1 / 5000)},
-              min_freq=7,
               fix_len=20,
               **kwargs):
         r"""
@@ -732,6 +568,7 @@ class VISrlParser(BiaffineSrlParser):
         """
 
         args = Config(**locals())
+        # interpolation = args.itp
         args.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path) and not args.build:
@@ -791,15 +628,21 @@ class VISrlParser(BiaffineSrlParser):
             'bert_pad_index': BERT.pad_index if BERT is not None else None,
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
-            'interpolation': args.itp
+            'interpolation': args.itp,
+            'encoder': args.encoder
         })
         logger.info(f"{transform}")
-
         logger.info("Building the model")
         model = cls.MODEL(**args).load_pretrained(WORD.embed).to(args.device)
         logger.info(f"{model}\n")
-
-        optimizer = Adam(model.parameters(), **optimizer_args)
-        scheduler = ExponentialLR(optimizer, **scheduler_args)
+        if (args.encoder != 'transformer'):
+            optimizer = Adam(model.parameters(), **optimizer_args)
+            scheduler = ExponentialLR(optimizer, **scheduler_args)
+        else:
+            optimizer = Adam(model.parameters(),
+                             lr=0.04,
+                             betas=(0.9, 0.98),
+                             eps=1e-12)
+            scheduler = VLR(optimizer, warmup_steps=8000)
 
         return cls(args, model, transform, optimizer, scheduler)

@@ -524,12 +524,15 @@ class VISrlModel(BiaffineSrlModel):
     def __init__(self,
                  n_words,
                  n_labels,
+                 use_pred=False,
+                 split=False,
                  encoder='lstm',
                  n_tags=None,
                  n_chars=None,
                  n_lemmas=None,
                  feat='tag,char,lemma',
                  n_embed=100,
+                 n_pretrained_embed=300,
                  n_embed_proj=125,
                  n_feat_embed=100,
                  n_char_embed=50,
@@ -555,15 +558,14 @@ class VISrlModel(BiaffineSrlModel):
                  unk_index=1,
                  **kwargs):
         super().__init__(**Config().update(locals()))
-
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
         if (encoder == 'lstm'):
-            self.embed_proj = nn.Linear(n_embed, n_embed_proj)
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
         else:
             n_embed_proj = 100
-            self.embed_proj = nn.Linear(n_embed, n_embed_proj)
+            self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
 
         self.n_input = n_embed + n_embed_proj
 
@@ -621,14 +623,33 @@ class VISrlModel(BiaffineSrlModel):
                                 n_out=n_mlp_bin,
                                 dropout=bin_mlp_dropout,
                                 activation=False)
-            self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                n_out=n_mlp_label,
-                                dropout=label_mlp_dropout,
-                                activation=False)
-            self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                n_out=n_mlp_label,
-                                dropout=label_mlp_dropout,
-                                activation=False)
+            
+            if(not split):
+                self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+            else:
+                self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
+                self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                        n_out=n_mlp_label,
+                                        dropout=label_mlp_dropout,
+                                        activation=False)
         else:
             self.encoder = SelfAttentionEncoder(num_encoder_layers=12,
                                                 emb_size=self.n_input)
@@ -786,7 +807,6 @@ class VISrlModel(BiaffineSrlModel):
         s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->g)
         s_grd = self.grd_attn(pair_g, pair_d, pair_h).permute(0, 3, 1, 2)
-        # ? 怎么少了?
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 

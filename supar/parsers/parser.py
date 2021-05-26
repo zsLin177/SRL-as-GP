@@ -131,8 +131,10 @@ def produce_column_3(relas, prd_idx):
             s_rel = rel[0]
             position_tag = s_rel[0]
             label = s_rel[2:]  # label直接按第一个边界的label
-            if (position_tag in ('B', 'I')):
-                # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
+            if(position_tag == 'I'):
+                column.append('*')   # 直接把冲突的I删掉
+                i += 1
+            else:
                 span_start = i
                 span_end = -1
                 i += 1
@@ -324,12 +326,12 @@ class Parser(object):
         args = self.args.update(locals())
         init_logger(logger, verbose=args.verbose)
 
-        self.transform.eval()
+        self.transform.train()
         if args.prob:
             self.transform.append(Field('probs'))
 
         logger.info("Loading the data")
-        dataset = Dataset(self.transform, data, lang=lang)
+        dataset = Dataset(self.transform, data)
         dataset.build(args.batch_size, args.buckets)
         logger.info(f"\n{dataset}")
 

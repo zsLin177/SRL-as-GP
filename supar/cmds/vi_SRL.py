@@ -21,31 +21,56 @@ def main():
     subparser.add_argument('--test', default='data/sdp/DM/test.conllu', help='path to test file')
     subparser.add_argument('--embed', default='data/glove.6B.100d.txt', help='path to pretrained embeddings')
     subparser.add_argument('--unk', default='unk', help='unk token in pretrained embeddings')
-    subparser.add_argument('--n-embed', default=100, type=int, help='dimension of embeddings')
+    subparser.add_argument('--n-embed', default=300, type=int, help='dimension of embeddings')
+    subparser.add_argument('--n_pretrained_embed',
+                           default=300,
+                           type=int,
+                           help='dimension of pretrained embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--itp', default=0.1, type=float, help='inter...')
     subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
     subparser.add_argument('--encoder', default='lstm')
     subparser.add_argument('--clip', default=5.0, type=float)
-    subparser.add_argument('--dev_gold',
-                           default='data/conll05-original-style/sc-dev.final')
-    subparser.add_argument('--dev_pred',
-                           default='dev_mfvi_pred')
-    subparser.add_argument('--test_gold',
-                           default='data/conll05-original-style/sc-wsj.final')
-    subparser.add_argument('--test_pred',
-                           default='test_mfvi_pred')
+    subparser.add_argument('--split',
+                           action='store_true',
+                           help='whether to use different mlp for predicate and arg')
+    # subparser.add_argument('--dev_gold',
+    #                        default='data/conll05-original-style/sc-dev.final')
+    # subparser.add_argument('--dev_pred',
+    #                        default='dev_mfvi_pred')
+    # subparser.add_argument('--test_gold',
+    #                        default='data/conll05-original-style/sc-wsj.final')
+    # subparser.add_argument('--test_pred',
+    #                        default='test_mfvi_pred')
+    subparser.add_argument('--min_freq',
+                           default=7,
+                           type=int,
+                           help='The minimum frequency needed to include a token in the vocabulary')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
     subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
     # predict
-    subparser = subparsers.add_parser('predict', help='Use a trained parser to make predictions.')
-    subparser.add_argument('--prob', action='store_true', help='whether to output probs')
-    subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
-    subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
-    subparser.add_argument('--pred', default='pred.conllu', help='path to predicted result')
+    subparser = subparsers.add_parser(
+        'predict', help='Use a trained parser to make predictions.')
+    subparser.add_argument('--prob',
+                           action='store_true',
+                           help='whether to output probs')
+    subparser.add_argument('--buckets',
+                           default=8,
+                           type=int,
+                           help='max num of buckets to use')
+    subparser.add_argument('--data',
+                           default='data/sdp/DM/test.conllu',
+                           help='path to dataset')
+    subparser.add_argument('--pred',
+                           default='pred.conllu',
+                           help='path to predicted result')
+    subparser.add_argument('--conll05',
+                           action='store_true')
+    subparser.add_argument('--gold',
+                           default='data/conll05-original-style/sc-wsj.final')
     parse(parser)
 
 
