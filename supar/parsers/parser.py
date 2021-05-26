@@ -16,7 +16,11 @@ from supar.utils.parallel import is_master
 import random
 
 
-def change2(source_file, tgt_file):
+def change2(source_file, tgt_file, task):
+    if(task == '05'):
+        word_idx_to_write = 2
+    else:
+        word_idx_to_write = 1
     # change simple crosstag conllu to target type
     with open(source_file, 'r') as f:
         lines = [line.strip() for line in f]
@@ -74,7 +78,7 @@ def change2(source_file, tgt_file):
         column_1 = []
         for i, line_lst in enumerate(sentence_lst, 1):
             if (i in prd_map):
-                column_1.append(line_lst[2])
+                column_1.append(line_lst[word_idx_to_write])
             else:
                 column_1.append('-')
         new_columns.append(column_1)
@@ -169,10 +173,10 @@ def produce_column_3(relas, prd_idx):
 
 
 
-def get_results(gold_path, pred_path, file_seed):
+def get_results(gold_path, pred_path, file_seed, task):
     _SRL_CONLL_EVAL_SCRIPT = 'conll05-original-style/eval.sh'
     tgt_temp_file = 'tgt_temp_file' + file_seed
-    change2(pred_path, tgt_temp_file)
+    change2(pred_path, tgt_temp_file, task)
     child = subprocess.Popen('sh {} {} {}'.format(
         _SRL_CONLL_EVAL_SCRIPT, gold_path, tgt_temp_file), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     eval_info = child.communicate()[0]
@@ -349,13 +353,12 @@ class Parser(object):
         logger.info(
             f"{elapsed}s elapsed, {len(dataset) / elapsed.total_seconds():.2f} Sents/s"
         )
-        if(args.conll05):
+        if(args.task in ('05', '12')):
             rand_file_seed1 = random.randint(1,100)
             rand_file_seed2 = random.randint(1,100)
             test_conll_f1, test_lisa_f1 = 0, 0
-            test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))
+            test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
             logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
-
         return dataset
 
     def _train(self, loader):

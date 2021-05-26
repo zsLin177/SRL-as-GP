@@ -112,8 +112,7 @@ def main():
     subparser.add_argument('--pred',
                            default='pred.conllu',
                            help='path to predicted result')
-    subparser.add_argument('--conll05',
-                           action='store_true')
+    subparser.add_argument('--task', choices=['05', '09', '12'], required=True, help='which dataset')
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
     parse(parser)
