@@ -336,14 +336,15 @@ class BiaffineSrlModel(nn.Module):
             # if(not self.args.sig):
             # [batch_size, seq_len, seq_len]
             if(edges != None):
-                # 训练时使用正确的边
+                # repr gold
                 edge_pred = edges
             else:
-                # 预测时使用预测的边
+                # repr pred
                 edge_pred = s_edge.argmax(-1)
             # else:
             #     edge_pred = s_edge.ge(0).long()
             # [batch_size, seq_len]
+            mask[:, 0] = 0
             if_prd = edge_pred[..., 0].eq(1) & mask
             label_d = self.arg_label_d(x)
             label_h = self.arg_label_h(x)
@@ -845,7 +846,10 @@ class VISrlModel(BiaffineSrlModel):
             label_h = self.mlp_label_h(x)
             label_d = self.mlp_label_d(x)
         else:
-            edge_pred = marginals.ge(0.5).long()
+            if(self.args.repr_gold):
+                edge_pred = edges
+            else:
+                edge_pred = marginals.ge(0.5).long()
             if_prd = edge_pred[..., 0].eq(1) & mask2
             label_d = self.arg_label_d(x)
             label_h = self.arg_label_h(x)

@@ -139,6 +139,7 @@ def produce_column_3(relas, prd_idx):
                 column.append('*')   # 直接把冲突的I删掉
                 i += 1
             else:
+            # if(position_tag in ('B', 'I')):
                 span_start = i
                 span_end = -1
                 i += 1
