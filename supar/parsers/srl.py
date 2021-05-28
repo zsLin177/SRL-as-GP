@@ -1,3 +1,4 @@
+from enum import EnumMeta
 import os
 import pdb
 import subprocess
@@ -186,13 +187,21 @@ class BiaffineSrlParser(Parser):
 
         preds = {}
         charts, probs = [], []
+
+        strans, trans = self.prepare_viterbi()
+        if(torch.cuda.is_available()):
+            strans = strans.cuda()
+            trans = trans.cuda()
         for words, *feats in progress_bar(loader):
             mask = words.ne(self.WORD.pad_index)
+            n_mask = mask.clone()
+            n_mask[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            # edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            edge_preds, label_preds = self.model.viterbi_decode(s_edge, s_label, strans, trans, n_mask)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
             charts.extend(chart[1:i, :i].tolist()
@@ -214,6 +223,50 @@ class BiaffineSrlParser(Parser):
         # pdb.set_trace()
 
         return preds
+
+    def prepare_viterbi(self):
+        # [n_labels+2]
+        strans = [0] * (len(self.LABEL.vocab)+2)
+        trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
+        B_idxs = []
+        I_idxs = []
+        B2I_dict = {}
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+            elif(label.startswith('B-')):
+                B_idxs.append(i)
+                B2I_dict[label[2:]] = [i]
+            elif(label == '[prd]'):
+                # label = [prd]
+                strans[i] = -float('inf')
+                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)+2)
+                for j in range(len(trans)):
+                    trans[j][i] = -float('inf')
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                real_label = label[2:]
+                if(real_label in B2I_dict):
+                    B2I_dict[real_label].append(i)
+        for key, value in B2I_dict.items():
+            if(len(value)>1):
+                b_idx = value[0]
+                i_idx = value[1]
+                for idx in I_idxs:
+                    trans[b_idx][idx] = -float('inf')
+                trans[b_idx][i_idx] = 0
+        for i in I_idxs:
+            for j in I_idxs:
+                trans[i][j] = -float('inf')
+            trans[i][-2] = -float('inf')
+        trans[-2][-1] = -float('inf')
+        trans[-1][-2] = -float('inf')
+        for i in I_idxs:
+            trans[-1][i] = -float('inf')
+        
+        return torch.tensor(strans), torch.tensor(trans)
+
 
     @classmethod
     def build(cls,

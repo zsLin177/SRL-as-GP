@@ -11,6 +11,7 @@ from supar.modules.variational_inference import (LBPSemanticDependency,
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import pdb
+from torch.nn.utils.rnn import pad_sequence
 
 
 class BiaffineSrlModel(nn.Module):
@@ -429,13 +430,68 @@ class BiaffineSrlModel(nn.Module):
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
         return s_edge.argmax(-1), s_label.argmax(-1)
-        # if(not self.args.use_pred):
-        #     # if(not self.args.sig):
-        #     return s_edge.argmax(-1), s_label.argmax(-1)
-        #     # else:
-        #     #     return s_edge.ge(0).long(), s_label.argmax(-1)
-        # else:
-        #     return s_edge.argmax(-1), s_label[..., :-1].argmax(-1)
+    
+    def viterbi_decode(self, s_edge, s_label, strans, trans, mask):
+        edge_preds = s_edge.argmax(-1)
+        label_preds = s_label.argmax(-1)
+        raw_label_num = s_label.shape[-1]
+        t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
+        # [batch_size, seq_len]
+        pred_mask = edge_preds[..., 0].eq(1) & mask
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len, n_labels] k is the num of predicates in this batch
+        pred_scores = s_label[batch_idx, :, pred_idx, :]
+        # [k, seq_len, n_labels+2]
+        pred_scores = torch.cat((pred_scores, -float('inf') * torch.ones_like(pred_scores[..., :2])), -1)
+        # [k, seq_len]
+        exist_e_mask = edge_preds[batch_idx, :, pred_idx].bool()
+        exist_e_mask1 = exist_e_mask.unsqueeze(-1).expand(-1, -1, pred_scores.shape[-1])
+        notexist_e_mask = ~exist_e_mask
+        pred_scores = pred_scores.masked_fill(~exist_e_mask1, -float('inf'))
+        idx1, idx2 = notexist_e_mask.nonzero()[:, 0], notexist_e_mask.nonzero()[:, 1]
+        pred_scores[idx1, idx2, -2:] = 0
+        # [k, seq_len-1, n_labels+2] delete the beg
+        pred_scores = pred_scores[:, 1:, :]
+        # pdb.set_trace()
+        emit = pred_scores.transpose(0, 1)
+        seq_len, batch_size, n_tags = emit.shape
+        delta = emit.new_zeros(seq_len, batch_size, n_tags)
+        paths = emit.new_zeros(seq_len, batch_size, n_tags, dtype=torch.long)
+        # pdb.set_trace()
+        delta[0] = strans + emit[0]  # [batch_size, n_tags]
+
+        for i in range(1, seq_len):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+
+        preds = []
+        mask1 = mask[batch_idx, :][:, 1:].t()
+        for i, length in enumerate(mask1.sum(0).tolist()):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+        # [k, max_len]
+        # pdb.set_trace()
+        preds = pad_sequence(preds, True, -1)
+
+        preds = torch.cat((-torch.ones_like(preds[..., :1]).long(), preds), -1)
+        k, remain_len = preds.shape[0], seq_len_all - preds.shape[1]
+        if(remain_len > 0):
+            preds = torch.cat((preds, -torch.ones((k, remain_len), dtype=preds.device)), -1)
+        # preds: [k, seq_len_all]
+        preds = preds.masked_fill(preds.ge(raw_label_num), -1)
+        label_preds = label_preds.transpose(1, 2)
+        # pdb.set_trace()
+        label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
+        label_preds = label_preds.transpose(1, 2)
+
+        return edge_preds, label_preds
+
 
 
 class VISrlModel(BiaffineSrlModel):
