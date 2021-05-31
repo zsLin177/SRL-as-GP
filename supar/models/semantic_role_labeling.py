@@ -9,6 +9,7 @@ from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.variational_inference import (LBPSemanticDependency,
                                                  MFVISemanticDependency)
 from supar.utils import Config
+from supar.utils.fn import pad
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import pdb
 from torch.nn.utils.rnn import pad_sequence
@@ -431,9 +432,11 @@ class BiaffineSrlModel(nn.Module):
         """
         return s_edge.argmax(-1), s_label.argmax(-1)
     
-    def viterbi_decode(self, s_edge, s_label, strans, trans, mask):
+
+    def viterbi_decode(self, s_edge, s_label, strans, trans, mask, mask2):
         edge_preds = s_edge.argmax(-1)
         label_preds = s_label.argmax(-1)
+        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
         raw_label_num = s_label.shape[-1]
         t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
         # [batch_size, seq_len]
@@ -442,6 +445,9 @@ class BiaffineSrlModel(nn.Module):
         batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
         # [k, seq_len, n_labels] k is the num of predicates in this batch
         pred_scores = s_label[batch_idx, :, pred_idx, :]
+
+        pred_scores[range(pred_idx.shape[0]), pred_idx, :] = -float('inf')
+
         # [k, seq_len, n_labels+2]
         pred_scores = torch.cat((pred_scores, -float('inf') * torch.ones_like(pred_scores[..., :2])), -1)
         # [k, seq_len]
@@ -478,7 +484,7 @@ class BiaffineSrlModel(nn.Module):
         # [k, max_len]
         # pdb.set_trace()
         preds = pad_sequence(preds, True, -1)
-
+        # pdb.set_trace()
         preds = torch.cat((-torch.ones_like(preds[..., :1]).long(), preds), -1)
         k, remain_len = preds.shape[0], seq_len_all - preds.shape[1]
         if(remain_len > 0):
@@ -490,8 +496,58 @@ class BiaffineSrlModel(nn.Module):
         label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
         label_preds = label_preds.transpose(1, 2)
 
+        # pdb.set_trace()
         return edge_preds, label_preds
 
+    def viterbi_decode2(self, s_edge, s_label, strans, trans, mask, mask2):
+        edge_preds = s_edge.argmax(-1)
+        raw_seq_len = edge_preds.shape[1]
+        # 直接把指向自己的边去掉
+        edge_preds[:, range(raw_seq_len), range(raw_seq_len)] = 0
+        edge_preds[: 0] = 0
+        edge_preds = (edge_preds.gt(0) & mask2).long()
+        label_preds = s_label.argmax(-1)
+        # 直接把没有边的设为-1
+        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
+        # [batch_size, seq_len]
+        pred_mask = edge_preds[..., 0].eq(1) & mask
+        # 有用谓词，排除掉了没有孩子的谓词
+        pred_mask = pred_mask & edge_preds.sum(1).gt(0)
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        pred_arg_edge = edge_preds[batch_idx, :, pred_idx]
+        pred_arg_score = s_label[batch_idx, :, pred_idx, :]
+        idx1, idx2 = pred_arg_edge.nonzero()[:, 0], pred_arg_edge.nonzero()[:, 1]
+        lengths = pred_arg_edge.sum(-1).tolist()
+        tensors = pred_arg_score[idx1, idx2].split(lengths, 0)
+        # [k, max_len, n_labels]
+        paded_scores = pad(tensors)
+
+        emit = paded_scores.transpose(0, 1)
+        max_len, k, n_tags = emit.shape
+        delta = emit.new_zeros(max_len, k, n_tags)
+        paths = emit.new_zeros(max_len, k, n_tags, dtype=torch.long)
+        delta[0] = strans + emit[0]  # [k, n_tags]
+        for i in range(1, max_len):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+        
+        preds = []
+        for i, length in enumerate(lengths):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+        # [k, max_len]
+        # preds = pad_sequence(preds, True, -1)
+        src = torch.cat(preds, -1)
+        back_mask = (pred_mask.unsqueeze(-1).expand(-1, -1, raw_seq_len)) & (edge_preds.transpose(1, 2).gt(0))
+        label_preds = label_preds.transpose(1, 2).masked_scatter(back_mask, src).transpose(1, 2)
+        # pdb.set_trace()
+        return edge_preds, label_preds
 
 
 class VISrlModel(BiaffineSrlModel):
