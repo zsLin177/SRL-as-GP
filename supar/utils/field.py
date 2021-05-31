@@ -387,3 +387,30 @@ class ChartField(Field):
             ]
         charts = [torch.tensor(chart) for chart in charts]
         return charts
+
+
+class SpanSrlFiled(Field):
+    def __init__(self, name, build_fn, fn=None):
+        self.build_fn = build_fn
+        super().__init__(name, fn=fn)
+
+    def build(self, dataset, min_freq=1):
+        counter = Counter(i for chart in getattr(dataset, self.name)
+                          for row in self.build_fn(chart) for i in row
+                          if i is not None)
+
+        self.vocab = Vocab(counter, min_freq, self.specials, self.unk_index)
+    def transform(self, charts):
+        charts = [self.preprocess(chart) for chart in charts]
+        if self.use_vocab:
+            charts = [[[[self.vocab[i] if i is not None else -1 for i in row] for row in pred] for pred in chart] for chart in charts]
+        charts = [torch.tensor(chart) for chart in charts]
+        return charts
+
+    @property
+    def pad_index(self):
+        if self.pad is None:
+            return -1
+        if hasattr(self, 'vocab'):
+            return self.vocab[self.pad]
+        return self.specials.index(self.pad)

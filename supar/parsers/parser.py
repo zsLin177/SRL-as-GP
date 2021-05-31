@@ -259,24 +259,13 @@ class Parser(object):
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
             # loss, dev_metric = self._evaluate(dev.loader)
-            dev_metric = self._evaluate(dev.loader)
+            dev_metric, dev_m2 = self._evaluate(dev.loader)
             logger.info(f"{'dev:':5} - {dev_metric}")
-            # dev_conll_f1, dev_lisa_f1, test_conll_f1, test_lisa_f1 = 0, 0, 0, 0
-            # if(dev_pred != None):
-            #     dev_ds = self.predict(args.dev, args.dev_pred)
-            #     # pdb.set_trace()
-            #     dev_conll_f1, dev_lisa_f1 = get_results(args.dev_gold, args.dev_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))    
-            # logger.info(f"dev_conllf1:{dev_conll_f1:6.4} - dev_lisaf1:{dev_lisa_f1:6.4}")
+            logger.info(f"{'dev:':5} - {dev_m2}")
 
-            # loss, test_metric = self._evaluate(test.loader)
-            # logger.info(f"{'test:':5} loss: {loss:.4f} - {test_metric}")
-
-            test_metric = self._evaluate(test.loader)
+            test_metric, test_m2 = self._evaluate(test.loader)
             logger.info(f"{'test:':5} - {test_metric}")
-            # if(test_pred != None):
-            #     test_ds = self.predict(args.test, args.test_pred)
-            #     test_conll_f1, test_lisa_f1 = get_results(args.test_gold, args.test_pred, str(rand_file_seed1)+'-'+str(rand_file_seed2))
-            # logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
+            logger.info(f"{'test:':5} - {test_m2}")
 
             t = datetime.now() - start
             # save the model if it is the best so far
@@ -291,7 +280,7 @@ class Parser(object):
             if epoch - best_e >= args.patience:
                 break
         # loss, metric = self.load(**args)._evaluate(test.loader)
-        metric = self.load(**args)._evaluate(test.loader)
+        metric, m2 = self.load(**args)._evaluate(test.loader)
         # metric = self.load(**args)._evaluate(dev.loader)
 
         logger.info(f"Epoch {best_e} saved")
@@ -312,10 +301,11 @@ class Parser(object):
         logger.info("Evaluating the dataset")
         start = datetime.now()
         # loss, metric = self._evaluate(dataset.loader)
-        metric = self._evaluate(dataset.loader)
+        metric, m2 = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
         # logger.info(f"loss: {loss:.4f} - {metric}")
         logger.info(f"- {metric}")
+        logger.info(f"- {m2}")
         logger.info(
             f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s"
         )

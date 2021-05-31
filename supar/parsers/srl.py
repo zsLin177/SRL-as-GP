@@ -9,7 +9,7 @@ from supar.models import (BiaffineSrlModel,
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import ChartField, Field, SubwordField
+from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.logging import init_logger, logger
 from supar.utils.metric import ChartMetric, SrlMetric
@@ -52,7 +52,21 @@ class BiaffineSrlParser(Parser):
         self.WORD, self.CHAR, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.LABEL = self.transform.PHEAD
+        self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
+        self.bi2label, self.I_idxs, self.B_idxs = self.idx_prepare()
+        
+    def idx_prepare(self):
+        bi2label = {}
+        I_idxs = []
+        B_idxs = []
+        for i, s in enumerate(self.LABEL.vocab.itos):
+            if(s.startswith('I-')):
+                I_idxs.append(i)
+                bi2label[i] = self.SPAN.vocab.stoi[s[2:]]
+            elif(s.startswith('B-')):
+                B_idxs.append(i)
+                bi2label[i] = self.SPAN.vocab.stoi[s[2:]]
+        return bi2label, I_idxs, B_idxs
 
     def train(self,
               train,
@@ -136,7 +150,7 @@ class BiaffineSrlParser(Parser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, labels in bar:
+        for words, *feats, edges, labels, spans in bar:
             self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -164,8 +178,9 @@ class BiaffineSrlParser(Parser):
         self.model.eval()
 
         total_loss, metric = 0, SrlMetric()
+        metric2 = ChartMetric()
 
-        for words, *feats, edges, labels in loader:
+        for words, *feats, edges, labels, spans in loader:
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
@@ -174,12 +189,14 @@ class BiaffineSrlParser(Parser):
             # total_loss += loss.item()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
+            label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
+            metric(label_preds,
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
+            metric2(self.build_spans(label_preds), spans)
         # total_loss /= len(loader)
 
         # return total_loss, metric
-        return metric
+        return metric, metric2
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -226,6 +243,82 @@ class BiaffineSrlParser(Parser):
         # pdb.set_trace()
 
         return preds
+
+    def build_spans(self, label_pred):
+        # label_pred: [batch_size, seq_len, seq_len]
+        # return [batch_size, seq_len, seq_len, seq_len]
+        prd_idx = self.LABEL.vocab.stoi['[prd]']
+
+        batch_size, seq_len = label_pred.shape[0], label_pred.shape[1]
+        # [batch_size, seq_len]
+        pred_mask = label_pred[..., 0].ne(-1)
+        pred_mask[:, 0] = 0
+
+        k = pred_mask.sum()
+        if(k <= 0):
+            return -torch.ones((batch_size, seq_len, seq_len, seq_len), device=label_pred.device).long()
+        
+        pred_idxs = pred_mask.nonzero()
+        batch_idx = pred_idxs[:, 0]
+        pred_word_idx = pred_idxs[:, 1]
+        # [k, seq_len]
+        predicate_label_seq = label_pred[batch_idx, :, pred_word_idx]
+        predicate_label_seq = predicate_label_seq.masked_fill(predicate_label_seq.eq(prd_idx), -1)
+
+        lst = predicate_label_seq.tolist()
+        b_idx = []
+        s_idx = []
+        e_idx = []
+        span_label_idx = []
+        for i in range(k):
+            seq = lst[i][1:]  # [seq_len-1]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                elif(seq[j] in self.I_idxs):
+                    j += 1  # delete conflict I (it is so helpful)
+                    # maybe set a gap p(I_idx)>0.5 
+                else:
+                    span_start = j
+                    span_end = -1
+                    label1 = self.bi2label[seq[j]]
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] in self.B_idxs):
+                            break
+                        else:
+                            span_end = j
+                            label2 = self.bi2label[seq[j]]
+                            j += 1
+                            break
+                    
+                    if(span_end != -1):
+                        if(label1 == label2):
+                            # 前后不一样的删去
+                            s_idx.append(span_start+1)
+                            e_idx.append(span_end+1)
+                            span_label_idx.append(label1)
+                            b_idx.append(i)
+                    else:
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_start+1)
+                        b_idx.append(i)
+                        span_label_idx.append(label1)
+
+        k_spans = -torch.ones((k, seq_len, seq_len), device=label_pred.device).long()
+        k_spans_mask = k_spans.gt(-1)
+        k_spans_mask[b_idx, s_idx, e_idx] = True
+        k_spans = k_spans.masked_scatter(k_spans_mask, k_spans.new_tensor(span_label_idx))
+
+        back_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).unsqueeze(-1).expand(-1, -1, -1,seq_len)
+        spans = -torch.ones((batch_size, seq_len, seq_len, seq_len), device=label_pred.device).long()
+        spans = spans.masked_scatter(back_mask, k_spans)
+
+        return spans
 
     def prepare_viterbi(self):
         # [n_labels+2]
@@ -386,10 +479,11 @@ class BiaffineSrlParser(Parser):
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
+        SPAN = SpanSrlFiled('spans', build_fn=CoNLL.get_span_labels, fn=CoNLL.get_spans)
         transform = CoNLL(FORM=(WORD, CHAR, BERT),
                           LEMMA=LEMMA,
                           POS=TAG,
-                          PHEAD=(EDGE, LABEL))
+                          PHEAD=(EDGE, LABEL, SPAN))
 
         train = Dataset(transform, args.train)
         WORD.build(
@@ -404,6 +498,7 @@ class BiaffineSrlParser(Parser):
         LABEL.build(train)
         if(args.use_pred):
             LABEL.vocab.extend(['Other'])
+        SPAN.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
