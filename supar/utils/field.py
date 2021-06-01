@@ -5,7 +5,7 @@ from collections import Counter
 import torch
 from supar.utils.fn import pad
 from supar.utils.vocab import Vocab
-
+from allennlp.modules.elmo import batch_to_ids
 
 class RawField(object):
     r"""
@@ -259,6 +259,24 @@ class Field(RawField):
         """
 
         return pad(sequences, self.pad_index).to(self.device)
+
+
+class ElmoField(Field):
+    def build(self, dataset, min_freq=1, embed=None):
+        return
+
+    def transform(self, sequences):
+        sequences = [
+                ['<bos>'] + list(sequence) for sequence in sequences
+            ]
+        if self.lower:
+            sequences = [
+                list(map(str.lower, sequence)) for sequence in sequences
+            ]
+        return sequences
+
+    def compose(self, sequences):
+        return batch_to_ids(sequences).to(self.device)
 
 
 class SubwordField(Field):

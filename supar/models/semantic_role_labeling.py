@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder
+from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder, Elmo
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.variational_inference import (LBPSemanticDependency,
@@ -101,6 +101,7 @@ class BiaffineSrlModel(nn.Module):
                  n_chars=None,
                  n_lemmas=None,
                  feat='tag,char,lemma',
+                 n_elmo=1024,
                  n_embed=100,
                  n_pretrained_embed=300,
                  n_embed_proj=125,
@@ -142,6 +143,11 @@ class BiaffineSrlModel(nn.Module):
             self.tag_embed = nn.Embedding(num_embeddings=n_tags,
                                           embedding_dim=n_feat_embed)
             self.n_input += n_feat_embed
+
+        if 'elmo' in feat:
+            self.elmo_embed = Elmo()
+            self.n_input += n_elmo
+
         if 'char' in feat:
             self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
@@ -299,6 +305,8 @@ class BiaffineSrlModel(nn.Module):
             feat_embeds.append(self.tag_embed(feats.pop()))
         if 'char' in self.args.feat:
             feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'elmo' in self.args.feat:
+            feat_embeds.append(self.elmo_embed(feats.pop(0)))
         if 'bert' in self.args.feat:
             feat_embeds.append(self.bert_embed(feats.pop(0)))
         if 'lemma' in self.args.feat:
@@ -644,6 +652,7 @@ class VISrlModel(BiaffineSrlModel):
                  n_chars=None,
                  n_lemmas=None,
                  feat='tag,char,lemma',
+                 n_elmo=1024,
                  n_embed=100,
                  n_pretrained_embed=300,
                  n_embed_proj=125,
@@ -687,6 +696,9 @@ class VISrlModel(BiaffineSrlModel):
             self.tag_embed = nn.Embedding(num_embeddings=n_tags,
                                           embedding_dim=n_feat_embed)
             self.n_input += n_feat_embed
+        if 'elmo' in feat:
+            self.elmo_embed = Elmo()
+            self.n_input += n_elmo
         if 'char' in feat:
             self.char_embed = CharLSTM(n_chars=n_chars,
                                        n_embed=n_char_embed,
@@ -854,6 +866,8 @@ class VISrlModel(BiaffineSrlModel):
             feat_embeds.append(self.tag_embed(feats.pop()))
         if 'char' in self.args.feat:
             feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'elmo' in self.args.feat:
+            feat_embeds.append(self.elmo_embed(feats.pop(0)))
         if 'bert' in self.args.feat:
             feat_embeds.append(self.bert_embed(feats.pop(0)))
         if 'lemma' in self.args.feat:

@@ -12,11 +12,12 @@ from .treecrf import (CRF2oDependency, CRFConstituency, CRFDependency,
                       MatrixTree)
 from .variational_inference import (LBPSemanticDependency,
                                     MFVISemanticDependency)
+from .elmo import Elmo
 
 __all__ = [
     'LSTM', 'MLP', 'BertEmbedding', 'Biaffine', 'CharLSTM', 'CRF2oDependency',
     'CRFConstituency', 'CRFDependency', 'IndependentDropout',
     'LBPSemanticDependency', 'MatrixTree', 'MFVISemanticDependency',
     'ScalarMix', 'SharedDropout', 'Triaffine', 'Highway_Concat_BiLSTM',
-    'SelfAttentionEncoder'
+    'SelfAttentionEncoder', 'Elmo'
 ]

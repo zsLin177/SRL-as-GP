@@ -259,13 +259,15 @@ class Parser(object):
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
             # loss, dev_metric = self._evaluate(dev.loader)
-            dev_metric, dev_m2 = self._evaluate(dev.loader)
+            # dev_metric, dev_m2 = self._evaluate(dev.loader)
+            dev_metric = self._evaluate(dev.loader)
             logger.info(f"{'dev:':5} - {dev_metric}")
-            logger.info(f"{'dev:':5} - {dev_m2}")
+            # logger.info(f"{'dev:':5} - {dev_m2}")
 
-            test_metric, test_m2 = self._evaluate(test.loader)
+            test_metric = self._evaluate(test.loader)
+            # test_metric, test_m2 = self._evaluate(test.loader)
             logger.info(f"{'test:':5} - {test_metric}")
-            logger.info(f"{'test:':5} - {test_m2}")
+            # logger.info(f"{'test:':5} - {test_m2}")
 
             t = datetime.now() - start
             # save the model if it is the best so far
@@ -280,7 +282,7 @@ class Parser(object):
             if epoch - best_e >= args.patience:
                 break
         # loss, metric = self.load(**args)._evaluate(test.loader)
-        metric, m2 = self.load(**args)._evaluate(test.loader)
+        metric = self.load(**args)._evaluate(test.loader)
         # metric = self.load(**args)._evaluate(dev.loader)
 
         logger.info(f"Epoch {best_e} saved")
@@ -301,11 +303,12 @@ class Parser(object):
         logger.info("Evaluating the dataset")
         start = datetime.now()
         # loss, metric = self._evaluate(dataset.loader)
-        metric, m2 = self._evaluate(dataset.loader)
+        metric = self._evaluate(dataset.loader)
+        # metric, m2 = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
         # logger.info(f"loss: {loss:.4f} - {metric}")
         logger.info(f"- {metric}")
-        logger.info(f"- {m2}")
+        # logger.info(f"- {m2}")
         logger.info(
             f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s"
         )
@@ -337,7 +340,7 @@ class Parser(object):
         logger.info("Making predictions on the dataset")
 
         start = datetime.now()
-        preds = self._predict(dataset.loader)
+        preds, spans = self._predict(dataset.loader)
         elapsed = datetime.now() - start
 
         for name, value in preds.items():
@@ -354,7 +357,65 @@ class Parser(object):
             test_conll_f1, test_lisa_f1 = 0, 0
             test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
             logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
+        # if(args.task == '05'):
+        #     self.generate_final(data, spans, 2)
+        # elif(args.task == '12'):
+        #     self.generate_final(data, spans, 1)
         return dataset
+
+    def generate_final(self, src_file, spans, word_idx):
+        with open(src_file, 'r') as f:
+            lines = [line.strip() for line in f]
+        sentences = []
+        start, i = 0, 0
+        for line in lines:
+            if not line:
+                sentences.append(lines[start:i])
+                start = i + 1
+            i += 1
+        
+        new_sentenses = []
+        for i, sentence in enumerate(sentences):
+            new_sentense = []
+            span = spans[i]
+            preds = list(set(arg[0] for arg in span))
+            preds.sort()
+            columns = [['*'] * len(sentence) for _ in range(len(preds))]
+            column1 = []
+            for j, line in enumerate(sentence):
+                line_lst = line.split('\t')
+                if((j+1) in preds):
+                    column1.append(line_lst[word_idx])
+                else:
+                    column1.append('-')
+            for arg in span:
+                start = arg[1]
+                end = arg[2]
+                pred = arg[0]
+                label_s = self.SPAN.vocab.itos[arg[3]]
+                if(start == end):
+                    columns[preds.index(pred)][start-1] = '(' + label_s + '*' + ')'
+                else:
+                    columns[preds.index(pred)][start-1] = '(' + label_s + '*'
+                    # print(preds.index(pred))
+                    # print(preds)
+                    # print(pred)
+                    # print(end)
+                    # print(len(sentence))
+                    # print(span)
+                    # print(arg)
+                    columns[preds.index(pred)][end-1] = '*' + ')'
+            for j in range(len(sentence)):
+                tmp = [column1[j]] + [column[j] for column in columns]
+                new_sentense.append(tmp)
+
+            new_sentenses.append(new_sentense)
+
+        with open(src_file+'.final', 'w') as f:
+            for sentence_lst in new_sentenses:
+                for line_lst in sentence_lst:
+                    f.write('\t'.join(line_lst)+'\n')
+                f.write('\n')
 
     def _train(self, loader):
         raise NotImplementedError

@@ -9,7 +9,7 @@ from supar.models import (BiaffineSrlModel,
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled
+from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.logging import init_logger, logger
 from supar.utils.metric import ChartMetric, SrlMetric
@@ -49,11 +49,12 @@ class BiaffineSrlParser(Parser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
-        self.bi2label, self.I_idxs, self.B_idxs = self.idx_prepare()
+        # self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
+        self.EDGE, self.LABEL = self.transform.PHEAD
+        # self.bi2label, self.I_idxs, self.B_idxs = self.idx_prepare()
         
     def idx_prepare(self):
         bi2label = {}
@@ -150,8 +151,9 @@ class BiaffineSrlParser(Parser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for words, *feats, edges, labels, spans in bar:
-            self.optimizer.zero_grad()
+        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
+            # pdb.set_trace()
+            # self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
@@ -163,8 +165,10 @@ class BiaffineSrlParser(Parser):
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
-            self.optimizer.step()
-            self.scheduler.step()
+            if i % self.args.update_steps == 0:
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
 
             edge_preds, label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
@@ -178,9 +182,9 @@ class BiaffineSrlParser(Parser):
         self.model.eval()
 
         total_loss, metric = 0, SrlMetric()
-        metric2 = ChartMetric()
+        # metric2 = ChartMetric()
 
-        for words, *feats, edges, labels, spans in loader:
+        for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
@@ -192,11 +196,12 @@ class BiaffineSrlParser(Parser):
             label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1)
             metric(label_preds,
                    labels.masked_fill(~(edges.gt(0) & mask), -1))
-            metric2(self.build_spans(label_preds), spans)
+            # metric2(self.build_spans(label_preds), spans)
         # total_loss /= len(loader)
 
         # return total_loss, metric
-        return metric, metric2
+        # return metric, metric2
+        return metric
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -204,6 +209,7 @@ class BiaffineSrlParser(Parser):
 
         preds = {}
         charts, probs = [], []
+        spans_lst = []
 
         # strans, trans = self.prepare_viterbi()
         strans, trans = self.prepare_viterbi2()
@@ -212,6 +218,7 @@ class BiaffineSrlParser(Parser):
             trans = trans.cuda()
         for words, *feats, edges, labels in progress_bar(loader):
             # pdb.set_trace()
+            batch_size = words.shape[0]
             mask = words.ne(self.WORD.pad_index)
             n_mask = mask.clone()
             n_mask[:, 0] = 0
@@ -224,6 +231,21 @@ class BiaffineSrlParser(Parser):
             # edge_preds, label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, n_mask, mask)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
+            this_batch_span = self.build_spans(chart_preds)
+            this_batch_span_mask = this_batch_span.gt(-1)
+            # pdb.set_trace()
+            # [k, 4]
+            idxs = this_batch_span_mask.nonzero().tolist()
+            # [k]
+            label_ids = this_batch_span[this_batch_span_mask].tolist()
+            this_batch_lst = [[] for _ in range(batch_size)]
+            for i, idx in enumerate(idxs):
+                label_id = label_ids[i]
+                value = idx[1:] + [label_id]
+                # value: [prd_idx, span_start, span_end, label_id] label_id in span field
+                this_batch_lst[idx[0]].append(value)
+            spans_lst += this_batch_lst
+
             charts.extend(chart[1:i, :i].tolist()
                           for i, chart in zip(lens, chart_preds.unbind()))
             if self.args.prob:
@@ -240,9 +262,8 @@ class BiaffineSrlParser(Parser):
         preds = {'labels': charts}
         if self.args.prob:
             preds['probs'] = probs
-        # pdb.set_trace()
 
-        return preds
+        return preds, spans_lst
 
     def build_spans(self, label_pred):
         # label_pred: [batch_size, seq_len, seq_len]
@@ -456,7 +477,7 @@ class BiaffineSrlParser(Parser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        TAG, CHAR, LEMMA, BERT = None, None, None, None
+        TAG, CHAR, LEMMA, BERT, ELMO = None, None, None, None, None
         if 'tag' in args.feat:
             TAG = Field('tags', bos=bos)
         if 'char' in args.feat:
@@ -465,6 +486,8 @@ class BiaffineSrlParser(Parser):
                                 unk=unk,
                                 bos=bos,
                                 fix_len=args.fix_len)
+        if 'elmo' in args.feat:
+            ELMO = ElmoField('chars')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
@@ -479,11 +502,15 @@ class BiaffineSrlParser(Parser):
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        SPAN = SpanSrlFiled('spans', build_fn=CoNLL.get_span_labels, fn=CoNLL.get_spans)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT),
+        # SPAN = SpanSrlFiled('spans', build_fn=CoNLL.get_span_labels, fn=CoNLL.get_spans)
+        # transform = CoNLL(FORM=(WORD, CHAR, BERT),
+        #                   LEMMA=LEMMA,
+        #                   POS=TAG,
+        #                   PHEAD=(EDGE, LABEL, SPAN))
+        transform = CoNLL(FORM=(WORD, CHAR, ELMO, BERT),
                           LEMMA=LEMMA,
                           POS=TAG,
-                          PHEAD=(EDGE, LABEL, SPAN))
+                          PHEAD=(EDGE, LABEL))
 
         train = Dataset(transform, args.train)
         WORD.build(
@@ -498,7 +525,7 @@ class BiaffineSrlParser(Parser):
         LABEL.build(train)
         if(args.use_pred):
             LABEL.vocab.extend(['Other'])
-        SPAN.build(train)
+        # SPAN.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
@@ -546,7 +573,7 @@ class VISrlParser(BiaffineSrlParser):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
@@ -747,7 +774,8 @@ class VISrlParser(BiaffineSrlParser):
               optimizer_args={
                   'lr': 1e-3,
                   'betas': (.0, .95),
-                  'eps': 1e-12
+                  'eps': 1e-12, 
+                  'weight_decay': 3e-9
               },
               scheduler_args={'gamma': .75**(1 / 5000)},
               fix_len=20,
@@ -784,7 +812,7 @@ class VISrlParser(BiaffineSrlParser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        TAG, CHAR, LEMMA, BERT = None, None, None, None
+        TAG, CHAR, LEMMA, BERT, ELMO = None, None, None, None, None
         if 'tag' in args.feat:
             TAG = Field('tags', bos=bos)
         if 'char' in args.feat:
@@ -793,6 +821,8 @@ class VISrlParser(BiaffineSrlParser):
                                 unk=unk,
                                 bos=bos,
                                 fix_len=args.fix_len)
+        if 'elmo' in args.feat:
+            ELMO = ElmoField('chars')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
@@ -807,7 +837,7 @@ class VISrlParser(BiaffineSrlParser):
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
-        transform = CoNLL(FORM=(WORD, CHAR, BERT),
+        transform = CoNLL(FORM=(WORD, CHAR, ELMO, BERT),
                           LEMMA=LEMMA,
                           POS=TAG,
                           PHEAD=(EDGE, LABEL))
@@ -823,6 +853,8 @@ class VISrlParser(BiaffineSrlParser):
         if LEMMA is not None:
             LEMMA.build(train)
         LABEL.build(train)
+        # if(args.use_pred):
+        #     LABEL.vocab.extend(['Other'])
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
