@@ -37,7 +37,7 @@ def parse(parser):
                         type=int,
                         help='steps for update parameters')
     parser.add_argument('--elmo_dropout',
-                        default=0.5,
+                        default=0.33,
                         type=float)
 
     args, unknown = parser.parse_known_args()

@@ -489,8 +489,8 @@ class BiaffineSrlParser(Parser):
                                 bos=bos,
                                 fix_len=args.fix_len)
         if 'elmo' in args.feat:
-            # ELMO = ElmoField('chars')
-            ELMO = NewElmoField('chars')
+            ELMO = ElmoField('chars')
+            # ELMO = NewElmoField('chars')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:

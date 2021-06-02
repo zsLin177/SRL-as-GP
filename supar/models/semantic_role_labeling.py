@@ -146,8 +146,8 @@ class BiaffineSrlModel(nn.Module):
             self.n_input += n_feat_embed
 
         if 'elmo' in feat:
-            # self.elmo_embed = Elmo(dropout=elmo_dropout)
-            self.elmo_embed = NewElmo(dropout=elmo_dropout)
+            self.elmo_embed = Elmo(dropout=elmo_dropout)
+            # self.elmo_embed = NewElmo(dropout=elmo_dropout)
             self.n_input += n_elmo
 
         if 'char' in feat:
