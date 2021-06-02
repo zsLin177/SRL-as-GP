@@ -315,7 +315,8 @@ class BiaffineSemanticDependencyParser(Parser):
             5e-5,
             'epochs': 10, 
             'warmup':
-            0.1
+            0.1,
+            'interpolation': args.itp
         })
         logger.info(f"{transform}")
 

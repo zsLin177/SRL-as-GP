@@ -70,7 +70,7 @@ class Parser(object):
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
             dev_metric = self._evaluate(dev.loader)
-            logger.info(f" - {dev_metric}")
+            logger.info(f"- {dev_metric}")
             test_metric = self._evaluate(test.loader)
             logger.info(f"- {test_metric}")
 
