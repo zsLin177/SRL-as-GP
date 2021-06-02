@@ -9,7 +9,7 @@ from supar.models import (BiaffineSrlModel,
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField
+from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField, NewElmoField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.logging import init_logger, logger
 from supar.utils.metric import ChartMetric, SrlMetric
@@ -489,7 +489,8 @@ class BiaffineSrlParser(Parser):
                                 bos=bos,
                                 fix_len=args.fix_len)
         if 'elmo' in args.feat:
-            ELMO = ElmoField('chars')
+            # ELMO = ElmoField('chars')
+            ELMO = NewElmoField('chars')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:

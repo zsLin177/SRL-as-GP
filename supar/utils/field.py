@@ -279,6 +279,24 @@ class ElmoField(Field):
         return batch_to_ids(sequences).to(self.device)
 
 
+class NewElmoField(Field):
+    def build(self, dataset, min_freq=1, embed=None):
+        return
+
+    def transform(self, sequences):
+        # sequences = [
+        #         ['<bos>'] + list(sequence) for sequence in sequences
+        #     ]
+        if self.lower:
+            sequences = [
+                list(map(str.lower, sequence)) for sequence in sequences
+            ]
+        return sequences
+
+    def compose(self, sequences):
+        return batch_to_ids(sequences).to(self.device)
+
+
 class SubwordField(Field):
     r"""
     A field that conducts tokenization and numericalization over each token rather the sequence.
