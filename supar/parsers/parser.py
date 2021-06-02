@@ -340,7 +340,7 @@ class Parser(object):
         logger.info("Making predictions on the dataset")
 
         start = datetime.now()
-        preds, spans = self._predict(dataset.loader)
+        preds = self._predict(dataset.loader)
         elapsed = datetime.now() - start
 
         for name, value in preds.items():

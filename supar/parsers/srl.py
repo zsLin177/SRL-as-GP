@@ -231,20 +231,20 @@ class BiaffineSrlParser(Parser):
             # edge_preds, label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, n_mask, mask)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
-            this_batch_span = self.build_spans(chart_preds)
-            this_batch_span_mask = this_batch_span.gt(-1)
-            # pdb.set_trace()
-            # [k, 4]
-            idxs = this_batch_span_mask.nonzero().tolist()
-            # [k]
-            label_ids = this_batch_span[this_batch_span_mask].tolist()
-            this_batch_lst = [[] for _ in range(batch_size)]
-            for i, idx in enumerate(idxs):
-                label_id = label_ids[i]
-                value = idx[1:] + [label_id]
-                # value: [prd_idx, span_start, span_end, label_id] label_id in span field
-                this_batch_lst[idx[0]].append(value)
-            spans_lst += this_batch_lst
+            # this_batch_span = self.build_spans(chart_preds)
+            # this_batch_span_mask = this_batch_span.gt(-1)
+            # # pdb.set_trace()
+            # # [k, 4]
+            # idxs = this_batch_span_mask.nonzero().tolist()
+            # # [k]
+            # label_ids = this_batch_span[this_batch_span_mask].tolist()
+            # this_batch_lst = [[] for _ in range(batch_size)]
+            # for i, idx in enumerate(idxs):
+            #     label_id = label_ids[i]
+            #     value = idx[1:] + [label_id]
+            #     # value: [prd_idx, span_start, span_end, label_id] label_id in span field
+            #     this_batch_lst[idx[0]].append(value)
+            # spans_lst += this_batch_lst
 
             charts.extend(chart[1:i, :i].tolist()
                           for i, chart in zip(lens, chart_preds.unbind()))
@@ -263,7 +263,9 @@ class BiaffineSrlParser(Parser):
         if self.args.prob:
             preds['probs'] = probs
 
-        return preds, spans_lst
+        # return preds, spans_lst
+        return preds
+
 
     def build_spans(self, label_pred):
         # label_pred: [batch_size, seq_len, seq_len]
