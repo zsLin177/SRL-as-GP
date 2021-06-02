@@ -31,6 +31,9 @@ def parse(parser):
                         type=int,
                         default=-1,
                         help='node rank for distributed training')
+    parser.add_argument("--itp",
+                        type=float,
+                        default=0.06)
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)
