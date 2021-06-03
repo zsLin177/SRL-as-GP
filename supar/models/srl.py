@@ -138,19 +138,19 @@ class BiaffineSemanticRoleLabelingModel(Model):
                                 dropout=label_mlp_dropout,
                                 activation=False)
         else:
-            self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
+            self.prd_label_d = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
+            self.prd_label_h = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
+            self.arg_label_d = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
+            self.arg_label_h = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
@@ -187,8 +187,8 @@ class BiaffineSemanticRoleLabelingModel(Model):
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
         # [batch_size, seq_len, seq_len, 2]
-        s_egde = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
-        if(not split):
+        s_edge = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
+        if(not self.args.split):
             label_d = self.mlp_label_d(x)
             label_h = self.mlp_label_h(x)
         else:
@@ -211,12 +211,12 @@ class BiaffineSemanticRoleLabelingModel(Model):
         # [batch_size, seq_len, seq_len, n_labels]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_egde, s_label
+        return s_edge, s_label
 
-    def loss(self, s_egde, s_label, labels, mask):
+    def loss(self, s_edge, s_label, labels, mask):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -231,7 +231,7 @@ class BiaffineSemanticRoleLabelingModel(Model):
         """
 
         edge_mask = labels.ge(0) & mask
-        edge_loss = self.criterion(s_egde[mask], edge_mask[mask].long())
+        edge_loss = self.criterion(s_edge[mask], edge_mask[mask].long())
         if (edge_mask.any()):
             label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
             return self.args.interpolation * label_loss + (
@@ -239,10 +239,10 @@ class BiaffineSemanticRoleLabelingModel(Model):
         else:
             return edge_loss
 
-    def decode(self, s_egde, s_label):
+    def decode(self, s_edge, s_label):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -252,7 +252,7 @@ class BiaffineSemanticRoleLabelingModel(Model):
                 Predicted labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_label.argmax(-1).masked_fill_(s_egde.argmax(-1).lt(1), -1)
+        return s_label.argmax(-1).masked_fill_(s_edge.argmax(-1).lt(1), -1)
 
 
 class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
@@ -410,19 +410,19 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                                 dropout=label_mlp_dropout,
                                 activation=False)
         else:
-            self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
+            self.prd_label_d = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
+            self.prd_label_h = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
+            self.arg_label_d = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
-            self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
+            self.arg_label_h = MLP(n_in=self.args.n_hidden,
                                     n_out=n_mlp_label,
                                     dropout=label_mlp_dropout,
                                     activation=False)
@@ -468,7 +468,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         # label_d = self.mlp_label_d(x)
 
         # [batch_size, seq_len, seq_len]
-        s_egde = self.edge_attn(edge_d, edge_h)
+        s_edge = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
         s_sib = self.sib_attn(pair_d, pair_d, pair_h)
         s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
@@ -481,14 +481,14 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         # [batch_size, seq_len, seq_len, n_labels]
         # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        # return s_egde, s_sib, s_cop, s_grd, s_label
-        return s_egde, s_sib, s_cop, s_grd, x
+        # return s_edge, s_sib, s_cop, s_grd, s_label
+        return s_edge, s_sib, s_cop, s_grd, x
 
 
-    def loss(self, s_egde, s_sib, s_cop, s_grd, s_label, labels, mask, mask2):
+    def loss(self, s_edge, s_sib, s_cop, s_grd, x, labels, mask):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
                 Scores of all possible dependent-head-sibling triples.
@@ -509,14 +509,14 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         """
 
         edge_mask = labels.ge(0) & mask
-        edge_loss, marginals = self.inference((s_egde, s_sib, s_cop, s_grd),
+        edge_loss, marginals = self.inference((s_edge, s_sib, s_cop, s_grd),
                                               mask, edge_mask.long())
         if(not self.args.split):
             label_h = self.mlp_label_h(x)
             label_d = self.mlp_label_d(x)
         else:
             edge_pred = marginals.ge(0.5).long()
-            if_prd = edge_pred[..., 0].eq(1) & mask2
+            if_prd = edge_pred[..., 0].eq(1) & mask[:, :, 0]
             label_d = self.arg_label_d(x)
             label_h = self.arg_label_h(x)
             prd_d = self.prd_label_d(x[if_prd])
@@ -534,10 +534,10 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         else:
             return edge_loss, marginals, s_label
 
-    def decode(self, s_egde, s_label):
+    def decode(self, s_edge, s_label):
         r"""
         Args:
-            s_egde (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
                 Scores of all possible edges.
             s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
                 Scores of all possible labels on each edge.
@@ -547,4 +547,4 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                 Predicted labels of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        return s_label.argmax(-1).masked_fill_(s_egde.lt(0.5), -1)
+        return s_label.argmax(-1).masked_fill_(s_edge.lt(0.5), -1)

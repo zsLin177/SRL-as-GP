@@ -34,6 +34,9 @@ def parse(parser):
     parser.add_argument("--itp",
                         type=float,
                         default=0.06)
+    parser.add_argument('--update_steps',
+                        default=1,
+                        type=int)             
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)
