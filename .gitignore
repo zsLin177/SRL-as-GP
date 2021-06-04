@@ -1,5 +1,7 @@
 # data files
 data
+exp
+conll05-original-style
 
 # bash scripts
 *.sh
@@ -19,6 +21,12 @@ results
 # log and config files
 *.log
 *.ini
+*.conllu
+*.out
+*.07
+*.pred
+*.txt
+*.final
 
 # pycache
 __pycache__
@@ -26,6 +34,7 @@ __pycache__
 # saved model
 *.pkl
 *.pt
+tgt_temp_*
 
 # hidden files
 .*
