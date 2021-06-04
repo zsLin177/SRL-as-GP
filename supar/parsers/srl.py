@@ -48,8 +48,9 @@ class BiaffineSrlParser(Parser):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.WORD, self.CHAR, self.BERT = self.transform.FORM
 
-        self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
+        # self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         # self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
@@ -211,8 +212,8 @@ class BiaffineSrlParser(Parser):
         charts, probs = [], []
         spans_lst = []
 
-        # strans, trans = self.prepare_viterbi()
-        strans, trans = self.prepare_viterbi2()
+        strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
+        # strans, trans = self.prepare_viterbi2()
         if(torch.cuda.is_available()):
             strans = strans.cuda()
             trans = trans.cuda()
@@ -226,11 +227,18 @@ class BiaffineSrlParser(Parser):
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_label = self.model(words, feats)
-            edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            # edge_preds, label_preds = self.model.viterbi_decode(s_edge, s_label, strans, trans, n_mask, mask)
-            # edge_preds, label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, n_mask, mask)
+            if(not self.args.vtb):
+                edge_preds, label_preds = self.model.decode(s_edge, s_label)
+            else:
+                edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
             chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
+                # chart_preds = label_preds
+            # edge_preds, label_preds = self.model.viterbi_decode(s_edge, s_label, strans, trans, n_mask, mask)
+            # edge_preds, label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, n_mask, mask)
+            # edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            # chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
+            #                                       -1)
             # this_batch_span = self.build_spans(chart_preds)
             # this_batch_span_mask = this_batch_span.gt(-1)
             # # pdb.set_trace()
@@ -390,7 +398,7 @@ class BiaffineSrlParser(Parser):
             trans[-1][i] = -float('inf')
         
         # pdb.set_trace()
-        return torch.tensor(strans), torch.tensor(trans)
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
 
     def prepare_viterbi2(self):
         # [n_labels+2]
