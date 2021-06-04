@@ -229,11 +229,14 @@ class BiaffineSrlParser(Parser):
             s_edge, s_label = self.model(words, feats)
             if(not self.args.vtb):
                 edge_preds, label_preds = self.model.decode(s_edge, s_label)
+                chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
+                                                  -1)
             else:
                 edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
-            chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
-                                                  -1)
-                # chart_preds = label_preds
+                # chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
+                #                                     -1)
+                chart_preds = label_preds
+                
             # edge_preds, label_preds = self.model.viterbi_decode(s_edge, s_label, strans, trans, n_mask, mask)
             # edge_preds, label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, n_mask, mask)
             # edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
@@ -396,6 +399,8 @@ class BiaffineSrlParser(Parser):
         trans[-1][-2] = -float('inf')
         for i in I_idxs:
             trans[-1][i] = -float('inf')
+
+        strans[-2] = -float('inf')
         
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']

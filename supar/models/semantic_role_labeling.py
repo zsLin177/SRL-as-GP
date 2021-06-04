@@ -492,18 +492,22 @@ class BiaffineSrlModel(nn.Module):
         return pred_and_conflict
 
 
-    def viterbi_decode3(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
+    def viterbi_decode4(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
+        # 一阶段结果只提供先验概率，不作为强制条件
         edge_preds = s_edge.argmax(-1)
-        label_preds = s_label.argmax(-1)
-        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
+        pred_mask = edge_preds[..., 0].eq(1) & mask  # 所有谓词，不管有没有冲突
+        label_preds = -torch.ones_like(edge_preds).long()
+        label_preds[:, :, 0] = edge_preds[:, :, 0]
+        label_preds.masked_fill_(label_preds.lt(1), -1)
+        label_preds.masked_fill_(label_preds.eq(1), prd_idx)
+
+    
         raw_label_num = s_label.shape[-1]
         t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
-        # [batch_size, seq_len]
-        pred_mask = edge_preds[..., 0].eq(1) & mask
 
         # [batch_size, seq_len]
-        pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
-        k = pred_mask.sum()  # num of the conflict predicate
+        # pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        k = pred_mask.sum()
         if(k <= 0):
             return edge_preds, label_preds
         
@@ -512,17 +516,12 @@ class BiaffineSrlModel(nn.Module):
         # [batch_size, seq_len, seq_len, raw_label_num]
         p_label = s_label.softmax(-1)
 
-        # all_idxs = pred_mask.nonzero()
-        # batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
-        # # [k, seq_len, n_labels] k is the num of predicates in this batch
-        # pred_scores = p_label[batch_idx, :, pred_idx, :]
-
         #[batch_size, seq_len, seq_len, raw_label_num]
         weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
         label_probs = weight1 * p_label
         # [batch_size, seq_len, seq_len, 2]
         weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
-        # weight2 = weight2 / 2   # average the prob to O1 and O2
+        weight2 = weight2 / 2   # average the prob to O1 and O2
         # [batch_size, seq_len, seq_len, raw_label_num+2]
         label_probs = torch.cat((label_probs, weight2), -1)
 
@@ -532,21 +531,6 @@ class BiaffineSrlModel(nn.Module):
         pred_scores = label_probs[batch_idx, :, pred_idx, :].log()
         # [k, seq_len-1, n_labels+2] delete the bos
         pred_scores = pred_scores[:, 1:, :]
-
-
-        # pred_scores[range(pred_idx.shape[0]), pred_idx, :] = -float('inf')
-        # # [k, seq_len, n_labels+2]
-        # pred_scores = torch.cat((pred_scores, -float('inf') * torch.ones_like(pred_scores[..., :2])), -1)
-        # # [k, seq_len]
-        # exist_e_mask = edge_preds[batch_idx, :, pred_idx].bool()
-        # exist_e_mask1 = exist_e_mask.unsqueeze(-1).expand(-1, -1, pred_scores.shape[-1])
-        # notexist_e_mask = ~exist_e_mask
-        # pred_scores = pred_scores.masked_fill(~exist_e_mask1, -float('inf'))
-        # idx1, idx2 = notexist_e_mask.nonzero()[:, 0], notexist_e_mask.nonzero()[:, 1]
-        # pred_scores[idx1, idx2, -2:] = 0
-        # [k, seq_len-1, n_labels+2] delete the bos
-        # pred_scores = pred_scores[:, 1:, :]
-        # pdb.set_trace()
 
         emit = pred_scores.transpose(0, 1)
         seq_len, batch_size, n_tags = emit.shape
@@ -579,13 +563,109 @@ class BiaffineSrlModel(nn.Module):
             preds = torch.cat((preds, -preds.new_ones(k, remain_len, dtype=torch.long)), -1)
         # preds: [k, seq_len_all]
         # to mask O1, O2 to -1
+
         preds = preds.masked_fill(preds.ge(raw_label_num), -1)
         label_preds = label_preds.transpose(1, 2)
         # pdb.set_trace()
         label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
         label_preds = label_preds.transpose(1, 2)
 
+        new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        n_k = new_pred_mask.sum()  # num of the conflict predicate
+        if(n_k > 0):
+            pdb.set_trace()
+            new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+
+        return edge_preds, label_preds
+
+
+    def viterbi_decode3(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
+        edge_preds = s_edge.argmax(-1)
+
+
+        label_preds = s_label.argmax(-1)
+        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
+        
+        # tmp_mask = label_preds.eq(prd_idx)
+        # tmp_mask[:, :, 0] = 0
+        # label_preds = label_preds.masked_fill(tmp_mask, -1)
+
+        raw_label_num = s_label.shape[-1]
+        t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
+        # [batch_size, seq_len]
+        pred_mask = edge_preds[..., 0].eq(1) & mask
+
+        # [batch_size, seq_len]
+        # pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        k = pred_mask.sum()  # num of the conflict predicate
+        if(k <= 0):
+            return edge_preds, label_preds
+        
+        # [batch_size, seq_len, seq_len, 2]
+        p_edge = s_edge.softmax(-1)
+        # [batch_size, seq_len, seq_len, raw_label_num]
+        p_label = s_label.softmax(-1)
+
+        #[batch_size, seq_len, seq_len, raw_label_num]
+        weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
+        label_probs = weight1 * p_label
+        # [batch_size, seq_len, seq_len, 2]
+        weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
+        weight2 = weight2 / 2   # average the prob to O1 and O2
+        # [batch_size, seq_len, seq_len, raw_label_num+2]
+        label_probs = torch.cat((label_probs, weight2), -1)
+
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len, raw_label_num+2]
+        pred_scores = label_probs[batch_idx, :, pred_idx, :].log()
+        # [k, seq_len-1, n_labels+2] delete the bos
+        pred_scores = pred_scores[:, 1:, :]
+
+        emit = pred_scores.transpose(0, 1)
+        seq_len, batch_size, n_tags = emit.shape
+        delta = emit.new_zeros(seq_len, batch_size, n_tags)
+        paths = emit.new_zeros(seq_len, batch_size, n_tags, dtype=torch.long)
         # pdb.set_trace()
+        delta[0] = strans + emit[0]  # [batch_size, n_tags]
+
+        for i in range(1, seq_len):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+
+        preds = []
+        mask1 = mask[batch_idx, :][:, 1:].t()
+        for i, length in enumerate(mask1.sum(0).tolist()):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+        # [k, max_len]
+        # pdb.set_trace()
+        preds = pad_sequence(preds, True, -1)
+        # pdb.set_trace()
+        preds = torch.cat((-torch.ones_like(preds[..., :1]).long(), preds), -1)
+        k, remain_len = preds.shape[0], seq_len_all - preds.shape[1]
+        if(remain_len > 0):
+            preds = torch.cat((preds, -preds.new_ones(k, remain_len, dtype=torch.long)), -1)
+        # preds: [k, seq_len_all]
+        # to mask O1, O2 to -1
+
+        preds = preds.masked_fill(preds.ge(raw_label_num), -1)
+        label_preds = label_preds.transpose(1, 2)
+        # pdb.set_trace()
+        label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
+        label_preds = label_preds.transpose(1, 2)
+
+        new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        n_k = new_pred_mask.sum()  # num of the conflict predicate
+        if(n_k > 0):
+            pdb.set_trace()
+            new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+
         return edge_preds, label_preds
 
 
