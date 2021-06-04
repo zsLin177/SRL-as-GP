@@ -139,7 +139,7 @@ def produce_column_3(relas, prd_idx):
             position_tag = s_rel[0]
             label = s_rel[2:]  # label直接按第一个边界的label
             if(position_tag == 'I'):
-                pdb.set_trace()
+                # pdb.set_trace()
                 column.append('*')   # 直接把冲突的I删掉
                 i += 1
                 count += 1
