@@ -26,6 +26,9 @@ def main():
     subparser.add_argument('--n-embed-proj', default=125, type=int, help='dimension of projected embeddings')
     subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
     subparser.add_argument('--lr_rate', default=1, type=int)
+    subparser.add_argument('--split',
+                           action='store_true',
+                           help='whether to use different mlp for predicate and arg')
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
@@ -36,6 +39,9 @@ def main():
     subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
     subparser.add_argument('--pred', default='pred.conllu', help='path to predicted result')
     subparser.add_argument('--prob', action='store_true', help='whether to output probs')
+    subparser.add_argument('--task', choices=['05', '09', '12'], required=True, help='which dataset')
+    subparser.add_argument('--gold',
+                           default='data/conll05-original-style/sc-wsj.final')
     parse(parser)
 
 

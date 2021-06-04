@@ -318,7 +318,8 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             'epochs': 10, 
             'warmup':
             0.1,
-            'interpolation': args.itp
+            'interpolation': args.itp,
+            'split': args.split
         })
         logger.info(f"{transform}")
 
@@ -642,7 +643,8 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             'epochs': 10, 
             'warmup':
             0.1,
-            'interpolation': args.itp
+            'interpolation': args.itp,
+            'split': args.split
         })
         logger.info(f"{transform}")
 

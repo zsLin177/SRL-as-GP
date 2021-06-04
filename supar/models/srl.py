@@ -517,6 +517,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         else:
             edge_pred = marginals.ge(0.5).long()
             if_prd = edge_pred[..., 0].eq(1) & mask[:, :, 0]
+            # if_prd = edge_pred[..., 0].eq(1)
             label_d = self.arg_label_d(x)
             label_h = self.arg_label_h(x)
             prd_d = self.prd_label_d(x[if_prd])
