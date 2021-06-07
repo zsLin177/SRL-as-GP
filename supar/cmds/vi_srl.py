@@ -43,6 +43,10 @@ def main():
     subparser.add_argument('--task', choices=['05', '09', '12'], required=True, help='which dataset')
     subparser.add_argument('--gold',
                            default='data/conll05-original-style/sc-wsj.final')
+    subparser.add_argument('--vtb',
+                           action='store_true',
+                           default=False,
+                           help='whether to use viterbi')
     parse(parser)
 
 
