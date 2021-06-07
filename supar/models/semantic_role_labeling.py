@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder, Elmo, NewElmo
+from supar.modules import LSTM, MLP, BertEmbedding, CharLSTM, Highway_Concat_BiLSTM, SelfAttentionEncoder, Elmo
 from supar.modules.affine import Biaffine, Triaffine
 from supar.modules.dropout import IndependentDropout, SharedDropout
 from supar.modules.variational_inference import (LBPSemanticDependency,
@@ -147,7 +147,6 @@ class BiaffineSrlModel(nn.Module):
 
         if 'elmo' in feat:
             self.elmo_embed = Elmo(dropout=elmo_dropout)
-            # self.elmo_embed = NewElmo(dropout=elmo_dropout)
             self.n_input += n_elmo
 
         if 'char' in feat:

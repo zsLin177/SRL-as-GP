@@ -9,7 +9,7 @@ from supar.models import (BiaffineSrlModel,
 from supar.parsers.parser import Parser
 from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
-from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField, NewElmoField
+from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.logging import init_logger, logger
 from supar.utils.metric import ChartMetric, SrlMetric
@@ -48,9 +48,9 @@ class BiaffineSrlParser(Parser):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.WORD, self.CHAR, self.BERT = self.transform.FORM
+        # self.WORD, self.CHAR, self.BERT = self.transform.FORM
 
-        # self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
+        self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         # self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
@@ -502,8 +502,7 @@ class BiaffineSrlParser(Parser):
                                 bos=bos,
                                 fix_len=args.fix_len)
         if 'elmo' in args.feat:
-            ELMO = ElmoField('chars')
-            # ELMO = NewElmoField('chars')
+            ELMO = ElmoField('elmo')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:
@@ -838,7 +837,7 @@ class VISrlParser(BiaffineSrlParser):
                                 bos=bos,
                                 fix_len=args.fix_len)
         if 'elmo' in args.feat:
-            ELMO = ElmoField('chars')
+            ELMO = ElmoField('elmo')
         if 'lemma' in args.feat:
             LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
         if 'bert' in args.feat:

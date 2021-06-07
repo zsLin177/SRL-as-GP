@@ -1,9 +1,8 @@
 import allennlp.modules.elmo
 import torch
 
-
 class Elmo(allennlp.modules.elmo.Elmo):
-    def __init__(self, layer=3, dropout=0.5, requires_grad=False):
+    def __init__(self, layer=3, dropout=0.33, requires_grad=False):
         """
 
         Args:
@@ -13,10 +12,11 @@ class Elmo(allennlp.modules.elmo.Elmo):
         self.n_layers = layer
         self.dropout_rate = dropout
         self.if_requires_grad = requires_grad
-        super(Elmo, self).__init__(options_file="data/options.json",
-                                   weight_file="data/weights.hdf5",
+        super(Elmo, self).__init__(options_file="data/ELMO/options.json",
+                                   weight_file="data/ELMO/weights.hdf5",
                                    num_output_representations=1,
                                    requires_grad=False,
+                                   keep_sentence_boundaries=True,
                                    dropout=dropout)
 
     def forward(self, chars, word_inputs=None):
@@ -30,6 +30,8 @@ class Elmo(allennlp.modules.elmo.Elmo):
 
         """
         res = super(Elmo, self).forward(chars)['elmo_representations'][0]
+        res = res[:, :-1]
+        # pdb.set_trace()
         return res
 
     def __repr__(self):
@@ -43,7 +45,7 @@ class Elmo(allennlp.modules.elmo.Elmo):
 
 
 class NewElmo(allennlp.modules.elmo.Elmo):
-    def __init__(self, layer=3, dropout=0.5, requires_grad=False):
+    def __init__(self, layer=3, dropout=0.33, requires_grad=False):
         """
 
         Args:
@@ -53,8 +55,8 @@ class NewElmo(allennlp.modules.elmo.Elmo):
         self.n_layers = layer
         self.dropout_rate = dropout
         self.if_requires_grad = requires_grad
-        super(NewElmo, self).__init__(options_file="data/options.json",
-                                   weight_file="data/weights.hdf5",
+        super(NewElmo, self).__init__(options_file="data/ELMO/options.json",
+                                   weight_file="data/ELMO/weights.hdf5",
                                    num_output_representations=1,
                                    requires_grad=False,
                                    dropout=dropout)

@@ -266,9 +266,9 @@ class ElmoField(Field):
         return
 
     def transform(self, sequences):
-        sequences = [
-                ['<bos>'] + list(sequence) for sequence in sequences
-            ]
+        # sequences = [
+        #         ['<bos>'] + list(sequence) for sequence in sequences
+        #     ]
         if self.lower:
             sequences = [
                 list(map(str.lower, sequence)) for sequence in sequences
