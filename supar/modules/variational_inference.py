@@ -137,13 +137,16 @@ class MFVISemanticDependency(nn.Module):
                 The second is a tensor for marginals of shape ``[batch_size, seq_len, seq_len]``.
         """
 
-        logits = self.mfvi(*scores, mask)
+        logits, logits_lst = self.mfvi(*scores, mask)
         marginals = logits.sigmoid()
 
         if target is None:
             return marginals
         loss = F.binary_cross_entropy_with_logits(logits[mask],
                                                   target[mask].float())
+        for i in range(self.max_iter):
+            loss += 0.5 * (F.binary_cross_entropy_with_logits(logits_lst[i][mask],
+                                                  target[mask].float()))
 
         return loss, marginals
 
@@ -170,11 +173,14 @@ class MFVISemanticDependency(nn.Module):
         # [seq_len, seq_len, batch_size], (h->m)
         q = s_edge
 
+        logits_lst = []
         for _ in range(self.max_iter):
             q = q.sigmoid()  # ?
             # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
             q = s_edge + (q.unsqueeze(1) * s_sib +
                           q.transpose(0, 1).unsqueeze(0) * s_cop +
                           q.unsqueeze(0) * s_grd).sum(2)
+            
+            logits_lst.append(q.permute(2, 1, 0))
 
-        return q.permute(2, 1, 0)
+        return q.permute(2, 1, 0), logits_lst
