@@ -2,6 +2,7 @@
 data
 exp
 conll05-original-style
+old_data
 
 # bash scripts
 *.sh

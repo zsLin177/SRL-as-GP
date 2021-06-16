@@ -338,7 +338,11 @@ class BiaffineSemanticRoleLabelingModel(Model):
         label_probs = weight1 * p_label
         # [batch_size, seq_len, seq_len, 2]
         weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
+
         # weight2 = weight2 / 2   # average the prob to O1 and O2
+
+        # weight2 = weight2 * weight2
+
         # [batch_size, seq_len, seq_len, raw_label_num+2]
         label_probs = torch.cat((label_probs, weight2), -1)
 
