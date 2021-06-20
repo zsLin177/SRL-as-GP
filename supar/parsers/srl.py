@@ -388,8 +388,11 @@ class BiaffineSrlParser(Parser):
         #             trans[b_idx][idx] = -float('inf')
         #         trans[b_idx][i_idx] = 0
 
+        # for i in B_idxs:
+        #     trans[i][-1] = -float('inf')
+
         for i in B_idxs:
-            trans[i][-1] = -float('inf')
+            trans[-2][i] = -float('inf')
 
         for i in I_idxs:
             for j in I_idxs:
