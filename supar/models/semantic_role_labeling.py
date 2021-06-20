@@ -1128,30 +1128,6 @@ class VISrlModel(BiaffineSrlModel):
 
         # apply MLPs to the BiLSTM output states
 
-        # un_d = self.mlp_un_d(x)
-        # un_h = self.mlp_un_h(x)
-        # bin_d = self.mlp_bin_d(x)
-        # bin_h = self.mlp_bin_h(x)
-        # bin_g = self.mlp_bin_g(x)
-        # label_h = self.mlp_label_h(x)
-        # label_d = self.mlp_label_d(x)
-        # label_h = self.mlp_label_h(x)
-
-        # # [batch_size, seq_len, seq_len]
-        # s_edge = self.edge_attn(un_d, un_h)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
-        # s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2).triu_()
-        # s_cop = s_cop + s_cop.transpose(-1, -2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
-
-        # return s_edge, s_sib, s_cop, s_grd, s_label
-
         edge_d = self.mlp_un_d(x)
         edge_h = self.mlp_un_h(x)
         pair_d = self.mlp_bin_d(x)
@@ -1387,3 +1363,131 @@ class VISrlModel(BiaffineSrlModel):
         pred_and_conflict = pred_mask.clone()
         pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
         return pred_and_conflict
+
+    def encode(self, words, feats):
+        """
+        return inital h
+        """
+        _, seq_len = words.shape
+        # get the mask and lengths of given batch
+        mask = words.ne(self.pad_index)
+        ext_words = words
+        # set the indices larger than num_embeddings to unk_index
+        if hasattr(self, 'pretrained'):
+            ext_mask = words.ge(self.word_embed.num_embeddings)
+            ext_words = words.masked_fill(ext_mask, self.unk_index)
+
+        # get outputs from embedding layers
+        word_embed = self.word_embed(ext_words)
+        if hasattr(self, 'pretrained'):
+            word_embed = torch.cat(
+                (word_embed, self.embed_proj(self.pretrained(words))), -1)
+            # word_embed += self.pretrained(words)
+
+        feat_embeds = []
+        if 'tag' in self.args.feat:
+            feat_embeds.append(self.tag_embed(feats.pop()))
+        if 'char' in self.args.feat:
+            feat_embeds.append(self.char_embed(feats.pop(0)))
+        if 'elmo' in self.args.feat:
+            feat_embeds.append(self.elmo_embed(feats.pop(0)))
+        if 'bert' in self.args.feat:
+            feat_embeds.append(self.bert_embed(feats.pop(0)))
+        if 'lemma' in self.args.feat:
+            feat_embeds.append(self.lemma_embed(feats.pop(0)))
+        word_embed, feat_embed = self.embed_dropout(word_embed,
+                                                    torch.cat(feat_embeds, -1))
+        # concatenate the word and feat representations
+        embed = torch.cat((word_embed, feat_embed), -1)
+
+        if (self.args.encoder == 'lstm'):
+        # BiLSTM
+            x = pack_padded_sequence(embed, mask.sum(1).tolist(), True, False)
+            x, _ = self.encoder(x)
+            x, _ = pad_packed_sequence(x, True, total_length=seq_len)
+            x = self.encoder_dropout(x)
+
+            # HighwayBiLSTM
+            # x, (h_n, c_n), outputs = self.lstm(embed, mask)
+        else:
+            x = self.encoder(embed, ~mask)
+
+        return x
+
+    def one_big_inter(self, x, mask, mask2, q=None):
+        edge_d = self.mlp_un_d(x)
+        edge_h = self.mlp_un_h(x)
+        pair_d = self.mlp_bin_d(x)
+        pair_h = self.mlp_bin_h(x)
+        pair_g = self.mlp_bin_g(x)
+
+        # [batch_size, seq_len, seq_len]
+        s_edge = self.edge_attn(edge_d, edge_h)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
+        s_sib = self.sib_attn(pair_d, pair_d, pair_h)
+        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
+            0, 3, 1, 2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
+        s_cop = self.cop_attn(pair_h, pair_d, pair_h).permute(0, 3, 1, 2)
+        s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
+        # [batch_size, seq_len, seq_len, seq_len], (d->h->g)
+        s_grd = self.grd_attn(pair_g, pair_d, pair_h).permute(0, 3, 1, 2)
+
+        # q:[batch_size, seq_len, seq_len]
+        if(q != None):
+            q = self.one_inter_mfvi(s_edge, q, s_sib, s_cop, s_grd, mask)
+        else:
+            # it is the first interaction
+            q = self.one_inter_mfvi(s_edge, s_edge, s_sib, s_cop, s_grd, mask)
+
+        if(not self.args.split):
+            label_h = self.mlp_label_h(x)
+            label_d = self.mlp_label_d(x)
+        else:
+            edge_pred = q.sigmoid().ge(0.5).long()
+            if_prd = edge_pred[..., 0].eq(1) & mask2
+            label_d = self.arg_label_d(x)
+            label_h = self.arg_label_h(x)
+            prd_d = self.prd_label_d(x[if_prd])
+            prd_h = self.prd_label_h(x[if_prd])
+            if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+            label_d = label_d.masked_scatter(if_prd, prd_d)
+            label_h = label_h.masked_scatter(if_prd, prd_h)
+        s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+
+        # 还差更新了（看手机照片）
+        return q
+
+    
+    def one_inter_mfvi(self, s_edge, q, s_sib, s_cop, s_grd, mask):
+        """
+        s_edge :[batch_size, seq_len, seq_len]
+        q: [batch_size, seq_len, seq_len]
+        """
+
+        # [seq_len, seq_len, batch_size], (h->m)
+        q = q.permute(2, 1, 0)
+
+        # [seq_len, seq_len, batch_size], (h->m)
+        mask = mask.permute(2, 1, 0)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
+        mask2o = mask.unsqueeze(1) & mask.unsqueeze(2)
+        # [seq_len, seq_len, batch_size], (h->m)
+        s_edge = s_edge.permute(2, 1, 0)
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->s)
+        s_sib = s_sib.permute(2, 1, 3, 0) * mask2o
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->c)
+        s_cop = s_cop.permute(2, 1, 3, 0) * mask2o
+        # [seq_len, seq_len, seq_len, batch_size], (h->m->g)
+        s_grd = s_grd.permute(2, 1, 3, 0) * mask2o
+
+
+        q = q.sigmoid()
+        # q(ij) = s(ij) + sum(q(ik)s^sib(ij,ik) + q(kj)s^cop(ij,kj) + q(jk)s^grd(ij,jk)), k != i,j
+        q = s_edge + (q.unsqueeze(1) * s_sib +
+                        q.transpose(0, 1).unsqueeze(0) * s_cop +
+                        q.unsqueeze(0) * s_grd).sum(2)
+        
+        return q.permute(2, 1, 0)
+
+            
