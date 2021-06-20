@@ -388,8 +388,11 @@ class BiaffineSrlParser(Parser):
         #             trans[b_idx][idx] = -float('inf')
         #         trans[b_idx][i_idx] = 0
 
+        # for i in B_idxs:
+        #     trans[i][-1] = -float('inf')
+
         for i in B_idxs:
-            trans[i][-1] = -float('inf')
+            trans[-2][i] = -float('inf')
 
         for i in I_idxs:
             for j in I_idxs:
@@ -552,7 +555,8 @@ class BiaffineSrlParser(Parser):
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
             'interpolation': interpolation,
-            'encoder': args.encoder
+            'encoder': args.encoder,
+            'elmo_dropout': args.elmo_dropout
         })
         logger.info(f"{transform}")
         logger.info("Building the model")
@@ -827,8 +831,11 @@ class VISrlParser(BiaffineSrlParser):
         #             trans[b_idx][idx] = -float('inf')
         #         trans[b_idx][i_idx] = 0
 
+        # for i in B_idxs:
+        #     trans[i][-1] = -float('inf')
+
         for i in B_idxs:
-            trans[i][-1] = -float('inf')
+            trans[-2][i] = -float('inf')
 
         for i in I_idxs:
             for j in I_idxs:
@@ -942,7 +949,8 @@ class VISrlParser(BiaffineSrlParser):
             'pad_index': WORD.pad_index,
             'unk_index': WORD.unk_index,
             'interpolation': args.itp,
-            'encoder': args.encoder
+            'encoder': args.encoder,
+            'elmo_dropout': args.elmo_dropout
         })
         logger.info(f"{transform}")
         logger.info("Building the model")

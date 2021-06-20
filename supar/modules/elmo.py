@@ -15,7 +15,7 @@ class Elmo(allennlp.modules.elmo.Elmo):
         super(Elmo, self).__init__(options_file="data/ELMO/options.json",
                                    weight_file="data/ELMO/weights.hdf5",
                                    num_output_representations=1,
-                                   requires_grad=False,
+                                   requires_grad=self.if_requires_grad,
                                    keep_sentence_boundaries=True,
                                    dropout=dropout)
 

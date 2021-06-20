@@ -102,7 +102,7 @@ class BiaffineSrlModel(nn.Module):
                  n_lemmas=None,
                  feat='tag,char,lemma',
                  n_elmo=1024,
-                 elmo_dropout=0.5,
+                 elmo_dropout=0.33,
                  n_embed=100,
                  n_pretrained_embed=300,
                  n_embed_proj=125,
@@ -595,7 +595,7 @@ class BiaffineSrlModel(nn.Module):
         pred_mask = edge_preds[..., 0].eq(1) & mask
 
         # [batch_size, seq_len]
-        # pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
         k = pred_mask.sum()  # num of the conflict predicate
         if(k <= 0):
             return edge_preds, label_preds
@@ -889,6 +889,7 @@ class VISrlModel(BiaffineSrlModel):
                  n_lemmas=None,
                  feat='tag,char,lemma',
                  n_elmo=1024,
+                 elmo_dropout=0.33,
                  n_embed=100,
                  n_pretrained_embed=300,
                  n_embed_proj=125,
@@ -933,7 +934,7 @@ class VISrlModel(BiaffineSrlModel):
                                           embedding_dim=n_feat_embed)
             self.n_input += n_feat_embed
         if 'elmo' in feat:
-            self.elmo_embed = Elmo()
+            self.elmo_embed = Elmo(dropout=elmo_dropout)
             self.n_input += n_elmo
         if 'char' in feat:
             self.char_embed = CharLSTM(n_chars=n_chars,
