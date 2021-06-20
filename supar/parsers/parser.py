@@ -198,7 +198,7 @@ def get_results(gold_path, pred_path, file_seed, task):
     conll_f1 = 2 * conll_recall * conll_precision / (conll_recall + conll_precision + 1e-12)
     lisa_f1 = float(str(eval_info).strip().split("Overall")[1].strip().split('\\n')[0].split()[5])
 
-    return conll_f1, lisa_f1
+    return conll_recall, conll_precision, conll_f1, lisa_f1
 
 
 class Parser(object):
@@ -357,8 +357,8 @@ class Parser(object):
             rand_file_seed1 = random.randint(1,100)
             rand_file_seed2 = random.randint(1,100)
             test_conll_f1, test_lisa_f1 = 0, 0
-            test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
-            logger.info(f"test_conllf1:{test_conll_f1:6.4} - test_lisaf1:{test_lisa_f1:6.4}")
+            conll_recall, conll_precision, test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
+            logger.info(f"-P:{conll_precision:6.4} R:{conll_recall:6.4} F1:{test_conll_f1:6.4}")
         # if(args.task == '05'):
         #     self.generate_final(data, spans, 2)
         # elif(args.task == '12'):
