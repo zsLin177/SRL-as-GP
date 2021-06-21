@@ -694,9 +694,8 @@ class VISrlParser(BiaffineSrlParser):
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+            s_edge, s_label = self.model(words, feats, mask, mask2)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_label, edges, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -731,11 +730,10 @@ class VISrlParser(BiaffineSrlParser):
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-            #                                s_label, edges, labels, mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+            s_edge, s_label = self.model(words, feats, mask, mask2)
+            s_edge = s_edge.sigmoid()
+
+            # loss, s_edge, s_label = self.model.loss(s_edge, s_label, edges, labels, mask)
             # total_loss += loss.item()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -772,10 +770,9 @@ class VISrlParser(BiaffineSrlParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            s_edge, s_label = self.model(words, feats, mask, mask2)
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+            s_edge = s_edge.sigmoid()
             if(not self.args.vtb):
                 label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)

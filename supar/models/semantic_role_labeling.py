@@ -794,7 +794,7 @@ class BiaffineSrlModel(nn.Module):
         return edge_preds, label_preds
 
 
-class VISrlModel(BiaffineSrlModel):
+class VISrlModel(nn.Module):
     r"""
     The implementation of Semantic Dependency Parser using Variational Inference.
 
@@ -916,7 +916,9 @@ class VISrlModel(BiaffineSrlModel):
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
-        super().__init__(**Config().update(locals()))
+        super().__init__()
+
+        self.args = Config().update(locals())
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
@@ -1053,8 +1055,9 @@ class VISrlModel(BiaffineSrlModel):
                                    n_out=n_labels,
                                    bias_x=True,
                                    bias_y=True)
-        self.vi = (MFVISemanticDependency
-                   if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
+        # self.vi = (MFVISemanticDependency
+        #            if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
+        self.iter_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2, dropout=0.25, activation=True)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
@@ -1065,7 +1068,7 @@ class VISrlModel(BiaffineSrlModel):
             self.pretrained = nn.Embedding.from_pretrained(embed)
         return self
 
-    def forward(self, words, feats):
+    def old_forward(self, words, feats):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -1153,7 +1156,7 @@ class VISrlModel(BiaffineSrlModel):
 
         return s_edge, s_sib, s_cop, s_grd, x
 
-    def loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2):
+    def old_loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -1364,6 +1367,52 @@ class VISrlModel(BiaffineSrlModel):
         pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
         return pred_and_conflict
 
+    def forward(self, words, feats, mask, mask2):
+        init_x = self.encode(words, feats)
+        q, new_x, s_label = self.one_big_inter(init_x, mask, mask2)
+        for _ in range(self.args.max_iter - 1):
+            q, new_x, s_label = self.one_big_inter(new_x, mask, mask2, q)
+        return q, s_label
+
+
+    def loss(self, logits, s_label, edges, labels, mask):
+        r"""
+        Args:
+            s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
+                Scores of all possible edges.
+            s_sib (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
+                Scores of all possible dependent-head-sibling triples.
+            s_cop (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
+                Scores of all possible dependent-head-coparent triples.
+            s_grd (~torch.Tensor): ``[batch_size, seq_len, seq_len, seq_len]``.
+                Scores of all possible dependent-head-grandparent triples.
+            s_label (~torch.Tensor): ``[batch_size, seq_len, seq_len, n_labels]``.
+                Scores of all possible labels on each edge.
+            edges (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
+                The tensor of gold-standard edges.
+            labels (~torch.LongTensor): ``[batch_size, seq_len, seq_len]``.
+                The tensor of gold-standard labels.
+            mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
+                The mask for covering the unpadded tokens.
+
+        Returns:
+            ~torch.Tensor:
+                The training loss.
+        """
+
+        edge_mask = edges.gt(0) & mask
+        marginals = logits.sigmoid()
+        edge_loss = F.binary_cross_entropy_with_logits(logits[mask],
+                                                  edge_mask.long()[mask].float())
+        
+        if (edge_mask.any()):
+            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            loss = self.interpolation * label_loss + (
+                1 - self.interpolation) * edge_loss
+            return loss, marginals, s_label
+        else:
+            return edge_loss, marginals, s_label
+
     def encode(self, words, feats):
         """
         return inital h
@@ -1453,12 +1502,25 @@ class VISrlModel(BiaffineSrlModel):
             if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
             label_d = label_d.masked_scatter(if_prd, prd_d)
             label_h = label_h.masked_scatter(if_prd, prd_h)
+        # [batch_size, seq_len, seq_len, real_label_num]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        # 还差更新了（看手机照片）
-        return q
+        # [batch_size, seq_len, seq_len]
+        label_sum_exp = s_label.sum(-1)
+        batch_size, seq_len, _ = label_sum_exp.shape
+        diag_mask = torch.ones_like(label_sum_exp)
+        diag_mask[:, range(seq_len), range(seq_len)] = 0
+        # [batch_size, seq_len, seq_len] m->h
+        Q = (q.sigmoid() * label_sum_exp) * diag_mask
+        Q = Q.permute(0, 2, 1) #h->m
+        Q = Q.softmax(-1)
+        # [batch_size, seq_len, dim]
+        new_x = torch.matmul(Q, x)
+        new_x = self.iter_mlp(torch.cat((new_x, x), -1))
+        # new_x += x
 
-    
+        return q, new_x, s_label
+
     def one_inter_mfvi(self, s_edge, q, s_sib, s_cop, s_grd, mask):
         """
         s_edge :[batch_size, seq_len, seq_len]
