@@ -38,6 +38,7 @@ def main():
     subparser.add_argument('--repr_gold',
                            action='store_true',
                            help='whether to use gold predicates during train to repr label')
+    subparser.add_argument('--max_iter', default=3, type=int)        
     # subparser.add_argument('--dev_gold',
     #                        default='data/conll05-original-style/sc-dev.final')
     # subparser.add_argument('--dev_pred',

@@ -1057,7 +1057,7 @@ class VISrlModel(nn.Module):
                                    bias_y=True)
         # self.vi = (MFVISemanticDependency
         #            if inference == 'mfvi' else LBPSemanticDependency)(max_iter)
-        self.iter_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2, dropout=0.25, activation=True)
+        self.iter_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2, dropout=0.25)
         self.criterion = nn.CrossEntropyLoss()
         self.interpolation = interpolation
         self.pad_index = pad_index
