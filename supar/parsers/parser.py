@@ -293,7 +293,7 @@ class Parser(object):
         start = datetime.now()
         metric = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
-        logger.info(f"loss: {loss:.4f} - {metric}")
+        logger.info(f"- {metric}")
         logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
 
         return metric
