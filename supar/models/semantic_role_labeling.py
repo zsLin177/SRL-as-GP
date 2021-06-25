@@ -794,7 +794,7 @@ class BiaffineSrlModel(nn.Module):
         return edge_preds, label_preds
 
 
-class VISrlModel(BiaffineSrlModel):
+class VISrlModel(nn.Module):
     r"""
     The implementation of Semantic Dependency Parser using Variational Inference.
 
@@ -916,7 +916,9 @@ class VISrlModel(BiaffineSrlModel):
                  pad_index=0,
                  unk_index=1,
                  **kwargs):
-        super().__init__(**Config().update(locals()))
+        super().__init__()
+
+        self.args = Config().update(locals())
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
@@ -1281,7 +1283,7 @@ class VISrlModel(BiaffineSrlModel):
         weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
 
         # weight2 = weight2 / 2   # average the prob to O1 and O2
-        weight2 = weight2 * weight2
+        # weight2 = weight2 * weight2
 
         # [batch_size, seq_len, seq_len, raw_label_num+2]
         label_probs = torch.cat((label_probs, weight2), -1)
