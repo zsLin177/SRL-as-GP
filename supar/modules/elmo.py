@@ -47,7 +47,7 @@ class Elmo(allennlp.modules.elmo.Elmo):
         """
         normed_weights = F.softmax(torch.cat([param for param in self.softmax_weights]), dim=0)
         normed_weights = torch.split(normed_weights, 1)
-        pdb.set_trace()
+        # pdb.set_trace()
         res = super(Elmo, self).forward(chars)['elmo_representations']
         final = normed_weights[0] * res[0]
         for i in range(1, self.n_layers):

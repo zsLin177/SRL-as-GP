@@ -388,44 +388,33 @@ class BiaffineSrlModel(nn.Module):
             ~torch.Tensor:
                 The training loss.
         """
-        if(not self.args.use_pred):
+        # if(not self.args.use_pred):
         # with gold edges
             # if(not self.args.sig):
-            edge_mask = edges.gt(0) & mask
-            edge_loss = self.criterion(s_edge[mask], edges[mask])
-            if(edge_mask.any()):
-                label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-                return self.interpolation * label_loss + (
-                    1 - self.interpolation) * edge_loss
-            else:
-                return edge_loss
-            # else:
-            #     edge_mask = edges.gt(0) & mask
-            #     target = edge_mask.long()
-            #     edge_loss = F.binary_cross_entropy_with_logits(s_edge[mask],
-            #                                       target[mask].float())
-            #     if(edge_mask.any()):
-            #         label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-            #         return self.interpolation * label_loss + (
-            #             1 - self.interpolation) * edge_loss
-            #     else:
-            #         return edge_loss
+        edge_mask = edges.gt(0) & mask
+        edge_loss = self.criterion(s_edge[mask], edges[mask])
+        if(edge_mask.any()):
+            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+            return self.interpolation * label_loss + (
+                1 - self.interpolation) * edge_loss
         else:
-            # with predicted edges
-            edge_pred = s_edge.argmax(-1)
-            mask1 = edge_pred.gt(0) & mask
-            need_change_mask = mask1 & labels.eq(-1)
-            labels = labels.masked_fill(need_change_mask, self.args.n_labels - 1)
-            # edge loss still use gold
-            # edge_mask = edges.gt(0) & mask
-            edge_loss = self.criterion(s_edge[mask], edges[mask])
-            # label loss use predicted edges
-            if(mask1.any()):
-                label_loss = self.criterion(s_label[mask1], labels[mask1])
-                return self.interpolation * label_loss + (
-                    1 - self.interpolation) * edge_loss
-            else:
-                return edge_loss
+            return edge_loss
+        # else:
+        #     # with predicted edges
+        #     edge_pred = s_edge.argmax(-1)
+        #     mask1 = edge_pred.gt(0) & mask
+        #     need_change_mask = mask1 & labels.eq(-1)
+        #     labels = labels.masked_fill(need_change_mask, self.args.n_labels - 1)
+        #     # edge loss still use gold
+        #     # edge_mask = edges.gt(0) & mask
+        #     edge_loss = self.criterion(s_edge[mask], edges[mask])
+        #     # label loss use predicted edges
+        #     if(mask1.any()):
+        #         label_loss = self.criterion(s_label[mask1], labels[mask1])
+        #         return self.interpolation * label_loss + (
+        #             1 - self.interpolation) * edge_loss
+        #     else:
+        #         return edge_loss
 
     def decode(self, s_edge, s_label):
         r"""
@@ -1130,30 +1119,6 @@ class VISrlModel(nn.Module):
 
         # apply MLPs to the BiLSTM output states
 
-        # un_d = self.mlp_un_d(x)
-        # un_h = self.mlp_un_h(x)
-        # bin_d = self.mlp_bin_d(x)
-        # bin_h = self.mlp_bin_h(x)
-        # bin_g = self.mlp_bin_g(x)
-        # label_h = self.mlp_label_h(x)
-        # label_d = self.mlp_label_d(x)
-        # label_h = self.mlp_label_h(x)
-
-        # # [batch_size, seq_len, seq_len]
-        # s_edge = self.edge_attn(un_d, un_h)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_sib = self.sib_attn(bin_d, bin_d, bin_h).triu_()
-        # s_sib = (s_sib + s_sib.transpose(-1, -2)).permute(0, 3, 1, 2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_cop = self.cop_attn(bin_h, bin_d, bin_h).permute(0, 3, 1, 2).triu_()
-        # s_cop = s_cop + s_cop.transpose(-1, -2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_grd = self.grd_attn(bin_g, bin_d, bin_h).permute(0, 3, 1, 2)
-        # # [batch_size, seq_len, seq_len, n_labels]
-        # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
-
-        # return s_edge, s_sib, s_cop, s_grd, s_label
-
         edge_d = self.mlp_un_d(x)
         edge_h = self.mlp_un_h(x)
         pair_d = self.mlp_bin_d(x)
@@ -1179,7 +1144,7 @@ class VISrlModel(nn.Module):
 
         return s_edge, s_sib, s_cop, s_grd, x
 
-    def loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2):
+    def loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2, if_eval=False):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -1203,35 +1168,52 @@ class VISrlModel(nn.Module):
             ~torch.Tensor:
                 The training loss.
         """
-
-        edge_mask = edges.gt(0) & mask
-        edge_loss, marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask,
-                                       edge_mask.long())
-        if(not self.args.split):
-            label_h = self.mlp_label_h(x)
-            label_d = self.mlp_label_d(x)
-        else:
-            if(self.args.repr_gold):
+        if(not if_eval):
+            edge_mask = edges.gt(0) & mask
+            edge_loss, marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask,
+                                        edge_mask.long())
+            if(not self.args.split):
+                label_h = self.mlp_label_h(x)
+                label_d = self.mlp_label_d(x)
+            else:
+                # if(self.args.repr_gold):
                 edge_pred = edges
+                # else:
+                #     edge_pred = marginals.ge(0.5).long()
+                if_prd = edge_pred[..., 0].eq(1) & mask2
+                label_d = self.arg_label_d(x)
+                label_h = self.arg_label_h(x)
+                prd_d = self.prd_label_d(x[if_prd])
+                prd_h = self.prd_label_h(x[if_prd])
+                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+                label_d = label_d.masked_scatter(if_prd, prd_d)
+                label_h = label_h.masked_scatter(if_prd, prd_h)
+            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+            
+            if (edge_mask.any()):
+                label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+                loss = self.interpolation * label_loss + (
+                    1 - self.interpolation) * edge_loss
+                return loss, marginals, s_label
+            else:
+                return edge_loss, marginals, s_label
+        else:
+            marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask)
+            if(not self.args.split):
+                label_h = self.mlp_label_h(x)
+                label_d = self.mlp_label_d(x)
             else:
                 edge_pred = marginals.ge(0.5).long()
-            if_prd = edge_pred[..., 0].eq(1) & mask2
-            label_d = self.arg_label_d(x)
-            label_h = self.arg_label_h(x)
-            prd_d = self.prd_label_d(x[if_prd])
-            prd_h = self.prd_label_h(x[if_prd])
-            if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
-            label_d = label_d.masked_scatter(if_prd, prd_d)
-            label_h = label_h.masked_scatter(if_prd, prd_h)
-        s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
-        
-        if (edge_mask.any()):
-            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-            loss = self.interpolation * label_loss + (
-                1 - self.interpolation) * edge_loss
-            return loss, marginals, s_label
-        else:
-            return edge_loss, marginals, s_label
+                if_prd = edge_pred[..., 0].eq(1) & mask2
+                label_d = self.arg_label_d(x)
+                label_h = self.arg_label_h(x)
+                prd_d = self.prd_label_d(x[if_prd])
+                prd_h = self.prd_label_h(x[if_prd])
+                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+                label_d = label_d.masked_scatter(if_prd, prd_d)
+                label_h = label_h.masked_scatter(if_prd, prd_h)
+            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+            return 0, marginals, s_label
 
     def decode(self, s_edge, s_label):
         r"""

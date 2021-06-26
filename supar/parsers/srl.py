@@ -159,10 +159,10 @@ class BiaffineSrlParser(Parser):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            if(self.args.repr_gold):
-                s_edge, s_label = self.model(words, feats, edges)
-            else:
-                s_edge, s_label = self.model(words, feats)
+            # if(self.args.repr_gold):
+            s_edge, s_label = self.model(words, feats, edges)
+            # else:
+            #     s_edge, s_label = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -735,7 +735,7 @@ class VISrlParser(BiaffineSrlParser):
             # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
             #                                s_label, edges, labels, mask)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+                                           x, edges, labels, mask, mask2, True)
             # total_loss += loss.item()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -775,7 +775,7 @@ class VISrlParser(BiaffineSrlParser):
             s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+                                           x, edges, labels, mask, mask2, True)
             if(not self.args.vtb):
                 label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)
