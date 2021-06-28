@@ -605,7 +605,7 @@ class BiaffineSrlModel(nn.Module):
         # p_O = p_label.topk(2, -1)[0][..., -1]
         # weight2 = weight2 * (p_O.unsqueeze(-1).expand(-1, -1, -1, 2))
 
-        weight2 = weight2 * weight2
+        # weight2 = weight2 * weight2
         # weight2 = weight2 / 2   # average the prob to O1 and O2
 
         # [batch_size, seq_len, seq_len, raw_label_num+2]
