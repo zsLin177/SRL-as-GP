@@ -450,7 +450,37 @@ class BiaffineSrlParser(Parser):
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans)
 
-
+    def prepare_viterbi3(self):
+        # for biiio
+        strans = [0] * (len(self.LABEL.vocab)+1)
+        trans = [[0] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
+        B_idxs = []
+        I_idxs = []
+        B2I_dict = {}
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+            elif(label.startswith('B-')):
+                B_idxs.append(i)
+                B2I_dict[label[2:]] = [i]
+            elif(label == '[prd]'):
+                # label = [prd]
+                strans[i] = -float('inf')
+                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)+1)
+                for j in range(len(trans)):
+                    trans[j][i] = -float('inf')
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                real_label = label[2:]
+                if(real_label in B2I_dict):
+                    B2I_dict[real_label].append(i)
+        
+        for i in I_idxs:
+            trans[-1][i] = -float('inf')
+        
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+    
     @classmethod
     def build(cls,
               path,
@@ -850,6 +880,36 @@ class VISrlParser(BiaffineSrlParser):
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
 
+    def prepare_viterbi3(self):
+        # for biiio
+        strans = [0] * (len(self.LABEL.vocab)+1)
+        trans = [[0] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
+        B_idxs = []
+        I_idxs = []
+        B2I_dict = {}
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+            elif(label.startswith('B-')):
+                B_idxs.append(i)
+                B2I_dict[label[2:]] = [i]
+            elif(label == '[prd]'):
+                # label = [prd]
+                strans[i] = -float('inf')
+                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)+1)
+                for j in range(len(trans)):
+                    trans[j][i] = -float('inf')
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                real_label = label[2:]
+                if(real_label in B2I_dict):
+                    B2I_dict[real_label].append(i)
+        
+        for i in I_idxs:
+            trans[-1][i] = -float('inf')
+        
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
     @classmethod
     def build(cls,
               path,
