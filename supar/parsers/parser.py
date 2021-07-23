@@ -17,6 +17,9 @@ import random
 
 
 def change2(source_file, tgt_file, task):
+    '''
+    for BE
+    '''
     sum_false_count = 0
     if(task == '05'):
         word_idx_to_write = 2
@@ -111,6 +114,9 @@ def change2(source_file, tgt_file, task):
 
 
 def change(source_file, tgt_file, task):
+    """
+    for bii
+    """
     sum_false_count = 0
     if(task == '05'):
         word_idx_to_write = 2
@@ -202,7 +208,6 @@ def change(source_file, tgt_file, task):
             for line_lst in new_sentence_lst:
                 f.write(' '.join(line_lst) + '\n')
             f.write('\n')
-
 
 def produce_column_1(relas, prd_idx):
     # 暂时是直接按照预测的B、I进行划分,然后选最多的label作为label
