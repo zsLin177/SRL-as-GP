@@ -1434,7 +1434,7 @@ class VISrlModel(nn.Module):
         pred_mask = edge_preds[..., 0].eq(1) & mask
 
         # [batch_size, seq_len]
-        pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        pred_mask = self.detect_conflict2(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
         k = pred_mask.sum()  # num of the conflict predicate
         if(k <= 0):
             return label_preds

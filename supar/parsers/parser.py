@@ -110,6 +110,157 @@ def change2(source_file, tgt_file, task):
             f.write('\n')
 
 
+def change(source_file, tgt_file, task):
+    sum_false_count = 0
+    if(task == '05'):
+        word_idx_to_write = 2
+    else:
+        word_idx_to_write = 1
+    with open(source_file, 'r') as f:
+        lines = [line.strip() for line in f]
+    sentences = []
+    start, i = 0, 0
+    for line in lines:
+        if not line:
+            sentences.append(lines[start:i])
+            start = i + 1
+        i += 1
+
+    new_sentence_lsts = []
+    for sentence in sentences:
+        sentence_lst = []
+        for line in sentence:
+            sentence_lst.append(line.split('\t'))
+        # sentence_lst:[line_lst,...,] line_lst:[num, word, lemma, _, pos, _, _, _, relas, _]
+
+        # 老老实实写吧
+        # 先找出所有的谓词
+        num_words = len(sentence_lst)
+        prd_map = {}  # 33:1, 44:2
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (line_lst[8] == '_'):
+                continue
+            relas = line_lst[8].split('|')
+            for rela in relas:
+                head, rel = rela.split(':')
+                if (head == '0'):
+                    prd_map[i] = len(prd_map) + 1
+                    break
+
+        arc_values = []
+        # [[[a0],[a0]],]
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (line_lst[8] == '_'):
+                arc_value = [[] for j in range(len(prd_map))]
+                arc_values.append(arc_value)
+            else:
+                relas = line_lst[8].split('|')
+                arc_value = [[] for j in range(len(prd_map))]
+                for rela in relas:
+                    head, rel = rela.split(':')
+                    head_idx = int(head)
+                    if (head_idx in prd_map):
+                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
+                        arc_value[prd_map[head_idx] - 1].append(rel)
+                        # 应该只有一个，一个词根一个谓词只能有一个关系
+                arc_values.append(arc_value)
+
+        re_prd_map = {}  # 1:33, 2:44
+        for key, value in prd_map.items():
+            re_prd_map[value] = key
+
+        new_columns = []
+        column_1 = []
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (i in prd_map):
+                column_1.append(line_lst[word_idx_to_write])
+            else:
+                column_1.append('-')
+        new_columns.append(column_1)
+
+        for key, value in re_prd_map.items():
+            this_prd_arc = [
+                word_arc_lsts[key - 1] for word_arc_lsts in arc_values
+            ]
+            # [[rel], [rel], [],...]
+            this_prd_idx = value  # start from 1
+            this_column, count = produce_column_1(this_prd_arc, this_prd_idx)
+            sum_false_count += count
+            new_columns.append(this_column)
+
+        new_sentence_lst = []
+        num_column = len(new_columns)
+        for i in range(num_words):
+            new_line_lst = []
+            for j in range(num_column):
+                new_line_lst.append(new_columns[j][i])
+            new_sentence_lst.append(new_line_lst)
+        new_sentence_lsts.append(new_sentence_lst)
+    print('conflict I-:'+str(sum_false_count))
+    with open(tgt_file, 'w') as f:
+        for new_sentence_lst in new_sentence_lsts:
+            for line_lst in new_sentence_lst:
+                f.write(' '.join(line_lst) + '\n')
+            f.write('\n')
+
+
+def produce_column_1(relas, prd_idx):
+    # 暂时是直接按照预测的B、I进行划分,然后选最多的label作为label
+    count = 0
+    column = []
+    # span_start = -1
+    i = 0
+    while (i < len(relas)):
+        rel = relas[i]
+        if ((i + 1) == prd_idx):
+            column.append('(V*)')
+            i += 1
+        elif(rel == ['[prd]']):
+            column.append('*')
+            i += 1
+        elif (len(rel) == 0):
+            column.append('*')
+            i += 1
+        else:
+            s_rel = rel[0]
+            position_tag = s_rel[0]
+            label = s_rel[2:]
+            # if (position_tag in ('B', 'I')):
+                # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
+            if(position_tag == 'I'):
+                # pdb.set_trace()
+                column.append('*')   # 直接把冲突的I删掉
+                i += 1
+                count += 1
+                # pdb.set_trace()
+            else:
+                span_start = i
+                i += 1
+                labels = {}
+                labels[label] = 1
+                while (i < len(relas) and len(relas[i]) > 0):
+                    if (relas[i][0][0] == 'I'):
+                        labels[relas[i][0][2:]] = labels.get(
+                            relas[i][0][2:], 0) + 1
+                        i += 1
+                    else:
+                        # relas[i][0][0] == 'B' 直接把i指向下一个B
+                        break
+                length = i - span_start
+                max_label = label
+                max_num = 0
+                for key, value in labels.items():
+                    if (value > max_num):
+                        max_num = value
+                        max_label = key
+                if (length == 1):
+                    column.append('(' + max_label + '*' + ')')
+                else:
+                    column.append('(' + max_label + '*')
+                    column += ['*'] * (length - 2)
+                    column.append('*' + ')')
+    return column, count
+
 def produce_column_3(relas, prd_idx):
     # used for simple crosstag
     # 暂时是直接按照预测的B、I进行划分

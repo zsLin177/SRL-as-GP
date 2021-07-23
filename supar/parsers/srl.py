@@ -811,6 +811,7 @@ class VISrlParser(BiaffineSrlParser):
                                             s_label).masked_fill(~mask, -1)
             else:
                 label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                # label_preds = self.model.bii_viterbi_decode(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
 
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
