@@ -232,9 +232,27 @@ class BiaffineSrlParser(Parser):
                 chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                                                   -1)
             else:
+                # [batch_size, seq_len]
+                # pred_mask = edges[:, :, 0]
+                # pred_all_idx = pred_mask.nonzero()
+                # batch_idx, pred_idx = pred_all_idx[:, 0], pred_all_idx[:, 1]
+                # s_edge[batch_idx, pred_idx, 0, 0] = -float('inf')
+                # s_edge[batch_idx, pred_idx, 0, 1] = 1.0
+                # no_pred_mask = 1 - pred_mask
+                # no_pred_mask[:, 0] = 0  # exclude root
+                # no_pred_all_idx = no_pred_mask.nonzero()
+                # batch_idx, no_pred_idx = no_pred_all_idx[:, 0], no_pred_all_idx[:, 1]
+                # s_edge[batch_idx, no_pred_idx, 0, 0] = 1.0
+                # s_edge[batch_idx, no_pred_idx, 0, 1] = -float('inf')
+                # s_edge[batch_idx, :, no_pred_idx, 0] = 1.0
+                # s_edge[batch_idx, :, no_pred_idx, 1] = -float('inf')
+
                 edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
                 # chart_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask),
                 #                                     -1)
+
+                # label_preds[:, :, 0] = labels[:, :, 0]
+                # label_preds[batch_idx, :, no_pred_idx] = -1
                 chart_preds = label_preds
                 
             # edge_preds, label_preds = self.model.viterbi_decode(s_edge, s_label, strans, trans, n_mask, mask)
@@ -810,8 +828,22 @@ class VISrlParser(BiaffineSrlParser):
                 label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)
             else:
+                # pred_mask = edges[:, :, 0]
+                # pred_all_idx = pred_mask.nonzero()
+                # batch_idx, pred_idx = pred_all_idx[:, 0], pred_all_idx[:, 1]
+                # s_edge[batch_idx, pred_idx, 0] = 1
+                # no_pred_mask = 1 - pred_mask
+                # no_pred_mask[:, 0] = 0  # exclude root
+                # no_pred_all_idx = no_pred_mask.nonzero()
+                # batch_idx, no_pred_idx = no_pred_all_idx[:, 0], no_pred_all_idx[:, 1]
+                # s_edge[batch_idx, no_pred_idx, 0] = 0
+                # s_edge[batch_idx, :, no_pred_idx] = 0
+
                 label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
                 # label_preds = self.model.bii_viterbi_decode(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                
+                # label_preds[:, :, 0] = labels[:, :, 0]
+                # label_preds[batch_idx, :, no_pred_idx] = -1
 
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
