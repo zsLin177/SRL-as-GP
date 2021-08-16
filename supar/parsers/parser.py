@@ -362,12 +362,13 @@ class Parser(object):
     NAME = None
     MODEL = None
 
-    def __init__(self, args, model, transform, optimizer=None, scheduler=None):
+    def __init__(self, args, model, transform, optimizer=None, scheduler=None, n_labels=None):
         self.args = args
         self.model = model
         self.transform = transform
         self.optimizer = optimizer
         self.scheduler = scheduler
+        self.n_labels = n_labels
 
     def train(self,
               train,

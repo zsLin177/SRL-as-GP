@@ -185,40 +185,15 @@ class BiaffineSrlModel(nn.Module):
             #                                   dropout_in=0.0,
             #                                   dropout_out=0.4)
 
-            self.mlp_edge_d = MLP(n_in=n_lstm_hidden * 2,
-                                    n_out=n_mlp_edge,
-                                    dropout=edge_mlp_dropout,
+            # if(not split):  # because of one-stage, so no use split, don't know which is predicate
+            self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_mlp_label,
+                                    dropout=label_mlp_dropout,
                                     activation=False)
-            self.mlp_edge_h = MLP(n_in=n_lstm_hidden * 2,
-                                    n_out=n_mlp_edge,
-                                    dropout=edge_mlp_dropout,
+            self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_mlp_label,
+                                    dropout=label_mlp_dropout,
                                     activation=False)
-            if(not split):
-                self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-            else:
-                self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
 
         else:
             self.encoder = SelfAttentionEncoder(num_encoder_layers=12,
@@ -241,25 +216,13 @@ class BiaffineSrlModel(nn.Module):
                                    dropout=label_mlp_dropout,
                                    activation=False)
 
-        # the Biaffine layers
-        # if(not sig):
-        self.edge_attn = Biaffine(n_in=n_mlp_edge,
-                                    n_out=2,
-                                    bias_x=True,
-                                    bias_y=True)
-        # else:
-        #     # use sigmod loss
-        #     self.edge_attn = Biaffine(n_in=n_mlp_edge,
-        #                             bias_x=True,
-        #                             bias_y=True)
-        # if(not use_pred):
         self.label_attn = Biaffine(n_in=n_mlp_label,
                                 n_out=n_labels,
                                 bias_x=True,
                                 bias_y=True)
 
         self.criterion = nn.CrossEntropyLoss()
-        self.interpolation = interpolation
+        # self.interpolation = interpolation  # note because of one-stage
         self.pad_index = pad_index
         self.unk_index = unk_index
 
@@ -330,47 +293,16 @@ class BiaffineSrlModel(nn.Module):
             x = self.encoder(embed, ~mask)
 
         # apply MLPs to the encoder output states
-        edge_d = self.mlp_edge_d(x)
-        edge_h = self.mlp_edge_h(x)
-
-        # if(not self.args.sig):
-            # [batch_size, seq_len, seq_len, 2]
-        s_edge = self.edge_attn(edge_d, edge_h).permute(0, 2, 3, 1)
-        # else:
-        #     # [batch_size, seq_len, seq_len]
-        #     s_edge = self.edge_attn(edge_d, edge_h)
         
-        if(not self.args.split):
-            label_d = self.mlp_label_d(x)
-            label_h = self.mlp_label_h(x)
-        else:
-            # if(not self.args.sig):
-            # [batch_size, seq_len, seq_len]
-            if(edges != None):
-                # repr gold
-                edge_pred = edges
-            else:
-                # repr pred
-                edge_pred = s_edge.argmax(-1)
-            # else:
-            #     edge_pred = s_edge.ge(0).long()
-            # [batch_size, seq_len]
-            mask[:, 0] = 0
-            if_prd = edge_pred[..., 0].eq(1) & mask
-            label_d = self.arg_label_d(x)
-            label_h = self.arg_label_h(x)
-            prd_d = self.prd_label_d(x[if_prd])
-            prd_h = self.prd_label_h(x[if_prd])
-            if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
-            label_d = label_d.masked_scatter(if_prd, prd_d)
-            label_h = label_h.masked_scatter(if_prd, prd_h)
+        label_d = self.mlp_label_d(x)
+        label_h = self.mlp_label_h(x)
 
         # [batch_size, seq_len, seq_len, n_labels] or [batch_size, seq_len, seq_len, n_labels+1]
         s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_edge, s_label
+        return s_label
 
-    def loss(self, s_edge, s_label, edges, labels, mask):
+    def loss(self, s_label, labels, mask):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
@@ -388,35 +320,11 @@ class BiaffineSrlModel(nn.Module):
             ~torch.Tensor:
                 The training loss.
         """
-        # if(not self.args.use_pred):
-        # with gold edges
-            # if(not self.args.sig):
-        edge_mask = edges.gt(0) & mask
-        edge_loss = self.criterion(s_edge[mask], edges[mask])
-        if(edge_mask.any()):
-            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-            return self.interpolation * label_loss + (
-                1 - self.interpolation) * edge_loss
-        else:
-            return edge_loss
-        # else:
-        #     # with predicted edges
-        #     edge_pred = s_edge.argmax(-1)
-        #     mask1 = edge_pred.gt(0) & mask
-        #     need_change_mask = mask1 & labels.eq(-1)
-        #     labels = labels.masked_fill(need_change_mask, self.args.n_labels - 1)
-        #     # edge loss still use gold
-        #     # edge_mask = edges.gt(0) & mask
-        #     edge_loss = self.criterion(s_edge[mask], edges[mask])
-        #     # label loss use predicted edges
-        #     if(mask1.any()):
-        #         label_loss = self.criterion(s_label[mask1], labels[mask1])
-        #         return self.interpolation * label_loss + (
-        #             1 - self.interpolation) * edge_loss
-        #     else:
-        #         return edge_loss
+        loss = self.criterion(s_label[mask], labels[mask])
+        
+        return loss
 
-    def decode(self, s_edge, s_label):
+    def decode(self, s_label):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len, 2]``.
@@ -428,7 +336,7 @@ class BiaffineSrlModel(nn.Module):
             ~torch.Tensor, ~torch.Tensor:
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
-        return s_edge.argmax(-1), s_label.argmax(-1)
+        return s_label.argmax(-1)
     
     def detect_conflict(self, label_preds, pred_mask, B_idxs, I_idxs, prd_idx):
         """to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
@@ -566,19 +474,17 @@ class BiaffineSrlModel(nn.Module):
 
         return edge_preds, label_preds
 
-
-    def viterbi_decode3(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
-        edge_preds = s_edge.argmax(-1)
-
-
+    def viterbi_decode3(self, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx, null_idx):
         label_preds = s_label.argmax(-1)
+        edge_preds = (label_preds.ne(null_idx) & mask2).long()
+        edge_preds[:, 0] = 0
         label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
         
         # tmp_mask = label_preds.eq(prd_idx)
         # tmp_mask[:, :, 0] = 0
         # label_preds = label_preds.masked_fill(tmp_mask, -1)
 
-        raw_label_num = s_label.shape[-1]
+        raw_label_num = s_label.shape[-1] - 1
         t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
         # [batch_size, seq_len]
         pred_mask = edge_preds[..., 0].eq(1) & mask
@@ -587,29 +493,13 @@ class BiaffineSrlModel(nn.Module):
         pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
         k = pred_mask.sum()  # num of the conflict predicate
         if(k <= 0):
-            return edge_preds, label_preds
+            return label_preds
         
-        # [batch_size, seq_len, seq_len, 2]
-        p_edge = s_edge.softmax(-1)
-        # [batch_size, seq_len, seq_len, raw_label_num]
+        # [batch_size, seq_len, seq_len, raw_label_num+1]
         p_label = s_label.softmax(-1)
-
-        #[batch_size, seq_len, seq_len, raw_label_num]
-        weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
-        label_probs = weight1 * p_label
-        # [batch_size, seq_len, seq_len, 2]
-        weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
-
-        # [batch_size, seq_len, seq_len]
-        # p_O = p_label.max(-1)[0]
-        # p_O = p_label.topk(2, -1)[0][..., -1]
-        # weight2 = weight2 * (p_O.unsqueeze(-1).expand(-1, -1, -1, 2))
-
-        # weight2 = weight2 * weight2
-        # weight2 = weight2 / 2   # average the prob to O1 and O2
-
+        tmp = p_label[..., -1].unsqueeze(-1)
         # [batch_size, seq_len, seq_len, raw_label_num+2]
-        label_probs = torch.cat((label_probs, weight2), -1)
+        label_probs = torch.cat((p_label, tmp), -1)
 
         all_idxs = pred_mask.nonzero()
         batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
@@ -662,9 +552,7 @@ class BiaffineSrlModel(nn.Module):
             pdb.set_trace()
             new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
-        return edge_preds, label_preds
-
-
+        return label_preds
 
     def viterbi_decode(self, s_edge, s_label, strans, trans, mask, mask2):
         edge_preds = s_edge.argmax(-1)

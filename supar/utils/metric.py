@@ -92,9 +92,9 @@ class SrlMetric(Metric):
         self.p_gold = 0.0
         self.eps = eps
 
-    def __call__(self, preds, golds):
-        pred_mask = preds.ge(0)
-        gold_mask = golds.ge(0)
+    def __call__(self, preds, golds, nll_idx):
+        pred_mask = preds.ge(0) & preds.ne(nll_idx)
+        gold_mask = golds.ge(0) & golds.ne(nll_idx)
         span_mask = pred_mask & gold_mask
         self.pred += pred_mask.sum().item()
         self.gold += gold_mask.sum().item()
@@ -251,9 +251,9 @@ class ChartMetric(Metric):
         self.gold = 0.0
         self.eps = eps
 
-    def __call__(self, preds, golds):
-        pred_mask = preds.ge(0)
-        gold_mask = golds.ge(0)
+    def __call__(self, preds, golds, null_idx):
+        pred_mask = preds.ge(0) & preds.ne(null_idx)
+        gold_mask = golds.ge(0) & golds.ne(null_idx)
         span_mask = pred_mask & gold_mask
         self.pred += pred_mask.sum().item()
         self.gold += gold_mask.sum().item()
