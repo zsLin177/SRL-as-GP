@@ -646,6 +646,7 @@ class VISrlParser(BiaffineSrlParser):
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         self.EDGE, self.LABEL = self.transform.PHEAD
+        self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx, self.null_idx, self.pair_dict, self.single_idxs = self.prepare_viterbi()
 
     def train(self,
               train,
@@ -735,7 +736,6 @@ class VISrlParser(BiaffineSrlParser):
         self.model.train()
 
         bar, metric = progress_bar(loader), ChartMetric()
-
         for i, (words, *feats, edges, labels) in enumerate(bar, 1):
             # self.optimizer.zero_grad()
 
@@ -743,10 +743,12 @@ class VISrlParser(BiaffineSrlParser):
             mask2 = mask.clone()
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
-            mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+            # mask[:, 0] = 0
+            null_mask = labels.eq(-1) & mask
+            labels = labels.masked_fill(null_mask, len(self.transform.PHEAD[1].vocab)-1)
+            s_sib_1, s_sib_2, s_cop, s_grd, x = self.model(words, feats)
+            loss, marginals, s_label = self.model.loss(s_sib_1, s_sib_2, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2, self.null_idx, self.prd_idx, self.pair_dict, self.single_idxs)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -754,16 +756,11 @@ class VISrlParser(BiaffineSrlParser):
                 self.optimizer.step()
                 self.scheduler.step()
                 self.optimizer.zero_grad()
-            # self.optimizer.step()
-            # self.scheduler.step()
 
-            # edge_preds, label_preds = self.model.decode(s_edge, s_label)
-            # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
-            #        labels.masked_fill(~(edges.gt(0) & mask), -1))
-
-            label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~mask, -1),
-                   labels.masked_fill(~mask, -1))
+            label_preds = self.model.decode(s_label)
+            label_preds = label_preds.masked_fill(~mask, -1)
+            metric(label_preds,
+                   labels.masked_fill(~mask, -1), len(self.transform.PHEAD[1].vocab)-1)
 
             bar.set_postfix_str(
                 f"lr: {self.scheduler.get_last_lr()[0]:.4e} - loss: {loss:.4f} - {metric}"
@@ -774,27 +771,29 @@ class VISrlParser(BiaffineSrlParser):
         self.model.eval()
 
         total_loss, metric = 0, SrlMetric()
-
         for words, *feats, edges, labels in loader:
             mask = words.ne(self.WORD.pad_index)
             mask2 = mask.clone()
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
-            mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            # mask[:, 0] = 0
+            null_mask = labels.eq(-1) & mask
+            labels = labels.masked_fill(null_mask, len(self.transform.PHEAD[1].vocab)-1)
+            s_sib_1, s_sib_2, s_cop, s_grd, x = self.model(words, feats)
             # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
             #                                s_label, edges, labels, mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2, True)
+            loss, marginals, s_label = self.model.loss(s_sib_1, s_sib_2, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2, self.null_idx, self.prd_idx, self.pair_dict, self.single_idxs, True)
             # total_loss += loss.item()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
             # metric(label_preds.masked_fill(~(edge_preds.gt(0) & mask), -1),
             #        labels.masked_fill(~(edges.gt(0) & mask), -1))
 
-            label_preds = self.model.decode(s_edge, s_label)
-            metric(label_preds.masked_fill(~mask, -1),
-                   labels.masked_fill(~mask, -1))
+            label_preds = self.model.decode(s_label)
+            label_preds = label_preds.masked_fill(~mask, -1)
+            metric(label_preds,
+                   labels.masked_fill(~mask, -1), len(self.transform.PHEAD[1].vocab)-1)
 
         # total_loss /= len(loader)
 
@@ -808,27 +807,29 @@ class VISrlParser(BiaffineSrlParser):
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
 
-        strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
+        # strans, trans, B_idxs, I_idxs, prd_idx, null_idx, pair_dict = self.prepare_viterbi()
         if(torch.cuda.is_available()):
-            strans = strans.cuda()
-            trans = trans.cuda()
+            strans = self.strans.cuda()
+            trans = self.trans.cuda()
 
         for words, *feats, edges, labels in progress_bar(loader):
             # pdb.set_trace()
-            word_mask = words.ne(self.args.pad_index)
-            mask2 = word_mask.clone()
+            mask = words.ne(self.WORD.pad_index)
+            mask2 = mask.clone()
             mask2[:, 0] = 0
-            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
-            mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2, True)
+            # mask[:, 0] = 0
+            null_mask = labels.eq(-1) & mask
+            labels = labels.masked_fill(null_mask, len(self.transform.PHEAD[1].vocab)-1)
+            s_sib_1, s_sib_2, s_cop, s_grd, x = self.model(words, feats)
+            # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+            #                                s_label, edges, labels, mask)
+            loss, marginals, s_label = self.model.loss(s_sib_1, s_sib_2, s_cop, s_grd,
+                                           x, edges, labels, mask, mask2, self.null_idx, self.prd_idx, self.pair_dict, self.single_idxs, True)
             if(not self.args.vtb):
-                label_preds = self.model.decode(s_edge,
-                                            s_label).masked_fill(~mask, -1)
+                label_preds = self.model.decode(s_label)
+                
             else:
                 # pred_mask = edges[:, :, 0]
                 # pred_all_idx = pred_mask.nonzero()
@@ -841,7 +842,7 @@ class VISrlParser(BiaffineSrlParser):
                 # s_edge[batch_idx, no_pred_idx, 0] = 0
                 # s_edge[batch_idx, :, no_pred_idx] = 0
 
-                label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                label_preds = self.model.viterbi_decode3(s_label, strans, trans, mask2, mask, self.B_idxs, self.I_idxs, self.prd_idx, len(self.transform.PHEAD[1].vocab)-1)
                 # label_preds = self.model.bii_viterbi_decode(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
                 
                 # label_preds[:, :, 0] = labels[:, :, 0]
@@ -864,11 +865,14 @@ class VISrlParser(BiaffineSrlParser):
 
     def prepare_viterbi(self):
         # [n_labels+2]
-        strans = [0] * (len(self.LABEL.vocab)+2)
-        trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
+        # -1 means delete [NULL]
+        strans = [0] * (len(self.LABEL.vocab)-1+2)
+        trans = [[0] * (len(self.LABEL.vocab)-1+2) for _ in range((len(self.LABEL.vocab)-1+2))]
         B_idxs = []
         I_idxs = []
         B2I_dict = {}
+        pair_dict = {}
+        single_idxs = []
         for i, label in enumerate(self.LABEL.vocab.itos):
             if(label.startswith('I-')):
                 strans[i] = -float('inf')  # cannot start with I-
@@ -879,7 +883,7 @@ class VISrlParser(BiaffineSrlParser):
             elif(label == '[prd]'):
                 # label = [prd]
                 strans[i] = -float('inf')
-                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)+2)
+                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)-1+2)
                 for j in range(len(trans)):
                     trans[j][i] = -float('inf')
         for i, label in enumerate(self.LABEL.vocab.itos):
@@ -898,6 +902,7 @@ class VISrlParser(BiaffineSrlParser):
 
         # for i in B_idxs:
         #     trans[i][-1] = -float('inf')
+
         for i in B_idxs:
             trans[-2][i] = -float('inf')
 
@@ -911,9 +916,16 @@ class VISrlParser(BiaffineSrlParser):
             trans[-1][i] = -float('inf')
 
         strans[-2] = -float('inf')
-        
         # pdb.set_trace()
-        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+        for real_label in B2I_dict:
+            if(len(B2I_dict[real_label]) == 2):
+                idx1, idx2 = B2I_dict[real_label][0], B2I_dict[real_label][1]
+                pair_dict[idx1] = idx2
+                pair_dict[idx2] = idx1
+            else:
+                single_idxs.extend(B2I_dict[real_label])
+
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], self.LABEL.vocab.stoi['[NULL]'], pair_dict, single_idxs
 
     def prepare_viterbi3(self):
         # for biiio
@@ -1030,8 +1042,7 @@ class VISrlParser(BiaffineSrlParser):
         if LEMMA is not None:
             LEMMA.build(train)
         LABEL.build(train)
-        # if(args.use_pred):
-        #     LABEL.vocab.extend(['Other'])
+        LABEL.vocab.extend(['[NULL]'])
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),

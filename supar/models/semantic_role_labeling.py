@@ -844,14 +844,6 @@ class VISrlModel(nn.Module):
             self.encoder_dropout = SharedDropout(p=lstm_dropout)
         
             # the MLP layers
-            self.mlp_un_d = MLP(n_in=n_lstm_hidden * 2,
-                                n_out=n_mlp_un,
-                                dropout=un_mlp_dropout,
-                                activation=False)
-            self.mlp_un_h = MLP(n_in=n_lstm_hidden * 2,
-                                n_out=n_mlp_un,
-                                dropout=un_mlp_dropout,
-                                activation=False)
             self.mlp_bin_d = MLP(n_in=n_lstm_hidden * 2,
                                 n_out=n_mlp_bin,
                                 dropout=bin_mlp_dropout,
@@ -865,32 +857,15 @@ class VISrlModel(nn.Module):
                                 dropout=bin_mlp_dropout,
                                 activation=False)
             
-            if(not split):
-                self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-            else:
-                self.prd_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.prd_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.arg_label_d = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
-                self.arg_label_h = MLP(n_in=n_lstm_hidden * 2,
-                                        n_out=n_mlp_label,
-                                        dropout=label_mlp_dropout,
-                                        activation=False)
+            
+            self.mlp_label_d = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_mlp_label,
+                                    dropout=label_mlp_dropout,
+                                    activation=False)
+            self.mlp_label_h = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_mlp_label,
+                                    dropout=label_mlp_dropout,
+                                    activation=False)
         else:
             self.encoder = SelfAttentionEncoder(num_encoder_layers=12,
                                                 emb_size=self.n_input)
@@ -924,8 +899,8 @@ class VISrlModel(nn.Module):
                                 activation=False)
 
         # the affine layers
-        self.edge_attn = Biaffine(n_in=n_mlp_un, bias_x=True, bias_y=True)
-        self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
+        self.sib_attn_one_prd = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
+        self.sib_attn_two_prd = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.grd_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.label_attn = Biaffine(n_in=n_mlp_label,
@@ -1007,20 +982,21 @@ class VISrlModel(nn.Module):
 
         # apply MLPs to the BiLSTM output states
 
-        edge_d = self.mlp_un_d(x)
-        edge_h = self.mlp_un_h(x)
         pair_d = self.mlp_bin_d(x)
         pair_h = self.mlp_bin_h(x)
         pair_g = self.mlp_bin_g(x)
         # label_h = self.mlp_label_h(x)
         # label_d = self.mlp_label_d(x)
 
-        # [batch_size, seq_len, seq_len]
-        s_edge = self.edge_attn(edge_d, edge_h)
         # [batch_size, seq_len, seq_len, seq_len], (d->h->s)
-        s_sib = self.sib_attn(pair_d, pair_d, pair_h)
-        s_sib = (s_sib.triu() + s_sib.triu(1).transpose(-1, -2)).permute(
+        s_sib_1 = self.sib_attn_one_prd(pair_d, pair_d, pair_h)
+        s_sib_1 = (s_sib_1.triu() + s_sib_1.triu(1).transpose(-1, -2)).permute(
             0, 3, 1, 2)
+        
+        s_sib_2 = self.sib_attn_two_prd(pair_d, pair_d, pair_h)
+        s_sib_2 = (s_sib_2.triu() + s_sib_2.triu(1).transpose(-1, -2)).permute(
+            0, 3, 1, 2)
+
         # [batch_size, seq_len, seq_len, seq_len], (d->h->c)
         s_cop = self.cop_attn(pair_h, pair_d, pair_h).permute(0, 3, 1, 2)
         s_cop = s_cop.triu() + s_cop.triu(1).transpose(-1, -2)
@@ -1030,9 +1006,9 @@ class VISrlModel(nn.Module):
 
         # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_edge, s_sib, s_cop, s_grd, x
+        return s_sib_1, s_sib_2, s_cop, s_grd, x
 
-    def loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2, if_eval=False):
+    def loss(self, s_sib_1, s_sib_2, s_cop, s_grd, x, edges, labels, mask, mask2, null_idx, prd_idx, other_idxs, single_idxs, if_eval=False):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -1056,54 +1032,18 @@ class VISrlModel(nn.Module):
             ~torch.Tensor:
                 The training loss.
         """
+        label_h = self.mlp_label_h(x)
+        label_d = self.mlp_label_d(x)
+        s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
         if(not if_eval):
-            edge_mask = edges.gt(0) & mask
-            edge_loss, marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask,
-                                        edge_mask.long())
-            if(not self.args.split):
-                label_h = self.mlp_label_h(x)
-                label_d = self.mlp_label_d(x)
-            else:
-                # if(self.args.repr_gold):
-                edge_pred = edges
-                # else:
-                #     edge_pred = marginals.ge(0.5).long()
-                if_prd = edge_pred[..., 0].eq(1) & mask2
-                label_d = self.arg_label_d(x)
-                label_h = self.arg_label_h(x)
-                prd_d = self.prd_label_d(x[if_prd])
-                prd_h = self.prd_label_h(x[if_prd])
-                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
-                label_d = label_d.masked_scatter(if_prd, prd_d)
-                label_h = label_h.masked_scatter(if_prd, prd_h)
-            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
-            
-            if (edge_mask.any()):
-                label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-                loss = self.interpolation * label_loss + (
-                    1 - self.interpolation) * edge_loss
-                return loss, marginals, s_label
-            else:
-                return edge_loss, marginals, s_label
+            # edge_mask = edges.gt(0) & mask
+            loss, marginals, s_label = self.vi((s_label, s_sib_1, s_sib_2, s_cop, s_grd), mask, null_idx, prd_idx, other_idxs, single_idxs, labels)
+            return loss, marginals, s_label
         else:
-            marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            if(not self.args.split):
-                label_h = self.mlp_label_h(x)
-                label_d = self.mlp_label_d(x)
-            else:
-                edge_pred = marginals.ge(0.5).long()
-                if_prd = edge_pred[..., 0].eq(1) & mask2
-                label_d = self.arg_label_d(x)
-                label_h = self.arg_label_h(x)
-                prd_d = self.prd_label_d(x[if_prd])
-                prd_h = self.prd_label_h(x[if_prd])
-                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
-                label_d = label_d.masked_scatter(if_prd, prd_d)
-                label_h = label_h.masked_scatter(if_prd, prd_h)
-            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+            marginals, s_label = self.vi((s_label, s_sib_1, s_sib_2, s_cop, s_grd), mask, null_idx, prd_idx, other_idxs, single_idxs)
             return 0, marginals, s_label
 
-    def decode(self, s_edge, s_label):
+    def decode(self, s_label):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -1117,18 +1057,19 @@ class VISrlModel(nn.Module):
         """
 
         # return s_edge.argmax(-1), s_label.argmax(-1)
-        return s_label.argmax(-1).masked_fill_(s_edge.lt(0.5), -1)
+        return s_label.argmax(-1)
 
-    def viterbi_decode3(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
-        edge_preds = s_edge.ge(0.5).long()
+    def viterbi_decode3(self, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx, null_idx):
         label_preds = s_label.argmax(-1)
+        edge_preds = (label_preds.ne(null_idx) & mask2).long()
+        edge_preds[:, 0] = 0
         label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
         
         # tmp_mask = label_preds.eq(prd_idx)
         # tmp_mask[:, :, 0] = 0
         # label_preds = label_preds.masked_fill(tmp_mask, -1)
 
-        raw_label_num = s_label.shape[-1]
+        raw_label_num = s_label.shape[-1] - 1
         t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
         # [batch_size, seq_len]
         pred_mask = edge_preds[..., 0].eq(1) & mask
@@ -1139,24 +1080,11 @@ class VISrlModel(nn.Module):
         if(k <= 0):
             return label_preds
         
-    
-        # [batch_size, seq_len, seq_len, 2]
-        s_edge = s_edge.unsqueeze(-1)
-        p_edge = torch.cat((1-s_edge, s_edge), -1)
-        # [batch_size, seq_len, seq_len, raw_label_num]
+        # [batch_size, seq_len, seq_len, raw_label_num+1]
         p_label = s_label.softmax(-1)
-
-        #[batch_size, seq_len, seq_len, raw_label_num]
-        weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
-        label_probs = weight1 * p_label
-        # [batch_size, seq_len, seq_len, 2]
-        weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
-
-        # weight2 = weight2 / 2   # average the prob to O1 and O2
-        # weight2 = weight2 * weight2
-
+        tmp = p_label[..., -1].unsqueeze(-1)
         # [batch_size, seq_len, seq_len, raw_label_num+2]
-        label_probs = torch.cat((label_probs, weight2), -1)
+        label_probs = torch.cat((p_label, tmp), -1)
 
         all_idxs = pred_mask.nonzero()
         batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
@@ -1203,11 +1131,11 @@ class VISrlModel(nn.Module):
         label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
         label_preds = label_preds.transpose(1, 2)
 
-        # new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
-        # n_k = new_pred_mask.sum()  # num of the conflict predicate
-        # if(n_k > 0):
-        #     pdb.set_trace()
-        #     new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
+        n_k = new_pred_mask.sum()  # num of the conflict predicate
+        if(n_k > 0):
+            pdb.set_trace()
+            new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
         return label_preds
 
