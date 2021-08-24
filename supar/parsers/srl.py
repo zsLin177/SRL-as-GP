@@ -916,7 +916,6 @@ class VISrlParser(BiaffineSrlParser):
 
     def prepare_viterbi2(self):
         # directly process edge sequence
-        # [n_labels+2]
         strans = [0] * len(self.LABEL.vocab)
         trans = [[0] * len(self.LABEL.vocab) for _ in range(len(self.LABEL.vocab))]
         B_idxs = []
