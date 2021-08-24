@@ -1372,6 +1372,7 @@ class VISrlModel(nn.Module):
         pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
         return pred_and_conflict
 
+
     def detect_conflict2(self, label_preds, pred_mask, B_idxs, I_idxs, prd_idx):
         """to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
             for biiii
@@ -1510,3 +1511,125 @@ class VISrlModel(nn.Module):
         #     new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
         return label_preds
+
+    def viterbi_decode2(self, s_edge, s_label, strans, trans, mask, mask2, I_idxs, prd_idx, pair_dict):
+        # directly process edge sequence
+
+        edge_preds = s_edge.ge(0.5).long()
+        label_preds = s_label.argmax(-1)
+        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
+        edge_mask = edge_preds.gt(0) & mask2
+        
+        # tmp_mask = label_preds.eq(prd_idx)
+        # tmp_mask[:, :, 0] = 0
+        # label_preds = label_preds.masked_fill(tmp_mask, -1)
+
+        raw_label_num = s_label.shape[-1] # contain [prd]
+        t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
+        # [batch_size, seq_len]
+        pred_mask = edge_preds[..., 0].eq(1) & mask
+
+        # [batch_size, seq_len]
+        pred_mask = self.detect_conflict_edge(label_preds, pred_mask, I_idxs, prd_idx, pair_dict)
+        k = pred_mask.sum()  # num of the conflict predicate
+        if(k <= 0):
+            return label_preds
+    
+        # [batch_size, seq_len, seq_len, raw_label_num]
+        label_probs = s_label.softmax(-1)
+        # [batch_size, seq_len, seq_len]
+        edge_mask[:, :, 0] = 0  # no need to consider prd edges
+        # pdb.set_trace()
+        # [k, seq_len, raw_label_num]
+        pred_all_probs = label_probs.transpose(1,2)[pred_mask]
+        # [k, seq_len]
+        pred_all_edge_mask=edge_mask.transpose(1,2)[pred_mask]
+        # [num_edges, raw_label_num]
+        all_useful_probs=pred_all_probs[pred_all_edge_mask]
+        # [k]:[11,  3,  5,  6,  3, 10,  8]
+        pred_edge_num=pred_all_edge_mask.sum(1)
+        edge_num_lst = pred_edge_num.tolist()
+        # a list of tensor
+        lst = all_useful_probs.split(edge_num_lst, dim=0)
+        # [k, max_edge_num, raw_label_num]
+        pred_scores = pad_sequence(lst, True).log()
+        # [max_edge_num, k, raw_label_num]
+        emit = pred_scores.transpose(0, 1)
+        max_edge_num, batch_size, n_tags = emit.shape
+        delta = emit.new_zeros(max_edge_num, batch_size, n_tags)
+        paths = emit.new_zeros(max_edge_num, batch_size, n_tags, dtype=torch.long)
+        # pdb.set_trace()
+        delta[0] = strans + emit[0]  # [batch_size, n_tags]
+        for i in range(1, max_edge_num):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+
+        preds = []
+        for i, length in enumerate(edge_num_lst):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+
+        all_edge_labels = torch.cat(preds, -1)
+        # [k, seq_len]
+        src = pred_all_edge_mask.long().masked_fill(~pred_all_edge_mask, -1)
+        src = src.masked_scatter(pred_all_edge_mask, all_edge_labels)
+        label_preds = label_preds.transpose(1, 2)
+        label_preds[pred_mask] = src
+        label_preds = label_preds.transpose(1, 2)
+
+        return label_preds
+
+    def detect_conflict_edge(self, label_preds, pred_mask, I_idxs, prd_idx, pair_dict):
+            """to detect whether exist conflict (now just B-I-I, also consider B_a-Ib)
+            Args:
+                label_preds ([type]): [batch_size, seq_len, seq_len]
+                pred_mask ([type]): [batch_size, seq_len]
+            return:
+                a mask: [batch_size, seq_len] True: exist conflict
+            """
+            all_idxs = pred_mask.nonzero()
+            batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+            # [k, seq_len]
+            k_seq = label_preds[batch_idx, :, pred_idx]
+            k_seq = k_seq.masked_fill(k_seq.eq(prd_idx), -1)
+            lst = k_seq.tolist()
+            k = k_seq.shape[0]
+            for i in range(k):
+                tmp = [t for t in lst[i] if t>-1]
+                lst[i] = tmp
+            mask = []
+            for i in range(k):
+                seq = lst[i]
+                length = len(seq)
+                if(length == 0):
+                    mask.append(False)
+                    continue
+                
+                pre_idx = -1
+                cur_idx = seq[0]
+
+                flag = 0
+                for j in range(length):
+                    cur_idx = seq[j]
+                    if((cur_idx in I_idxs) and (pre_idx in I_idxs)):
+                        flag = 1
+                        break
+                    elif((cur_idx in I_idxs) and (pair_dict[cur_idx] != pre_idx)):
+                        flag = 1
+                        break
+                    else:
+                        pre_idx = seq[j]
+                if(flag == 0):
+                    mask.append(False)
+                else:
+                    mask.append(True)
+                
+            conflict_mask = pred_mask.new_tensor(mask)
+            pred_and_conflict = pred_mask.clone()
+            pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
+            return pred_and_conflict

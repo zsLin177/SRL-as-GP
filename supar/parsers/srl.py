@@ -806,7 +806,8 @@ class VISrlParser(BiaffineSrlParser):
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
 
-        strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
+        strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2()
+        # strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
         if(torch.cuda.is_available()):
             strans = strans.cuda()
             trans = trans.cuda()
@@ -839,8 +840,8 @@ class VISrlParser(BiaffineSrlParser):
                 # s_edge[batch_idx, no_pred_idx, 0] = 0
                 # s_edge[batch_idx, :, no_pred_idx] = 0
 
-                label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
-                # label_preds = self.model.bii_viterbi_decode(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, mask2, mask, I_idxs, prd_idx, pair_dict)
+                # label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
                 
                 # label_preds[:, :, 0] = labels[:, :, 0]
                 # label_preds[batch_idx, :, no_pred_idx] = -1
@@ -912,6 +913,63 @@ class VISrlParser(BiaffineSrlParser):
         
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+
+    def prepare_viterbi2(self):
+        # directly process edge sequence
+        # [n_labels+2]
+        strans = [0] * len(self.LABEL.vocab)
+        trans = [[0] * len(self.LABEL.vocab) for _ in range(len(self.LABEL.vocab))]
+        B_idxs = []
+        I_idxs = []
+        B2I_dict = {}
+        pair_dict = {}
+        single_idxs = []
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+            elif(label.startswith('B-')):
+                B_idxs.append(i)
+                B2I_dict[label[2:]] = [i]
+            elif(label == '[prd]'):
+                # label = [prd]
+                strans[i] = -float('inf')
+                trans[i] = [-float('inf')] * len(self.LABEL.vocab)
+                for j in range(len(trans)):
+                    trans[j][i] = -float('inf')
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                real_label = label[2:]
+                if(real_label in B2I_dict):
+                    B2I_dict[real_label].append(i)
+    
+        for real_label in B2I_dict:
+            if(len(B2I_dict[real_label]) == 2):
+                idx1, idx2 = B2I_dict[real_label][0], B2I_dict[real_label][1]
+                pair_dict[idx1] = idx2
+                pair_dict[idx2] = idx1
+            else:
+                single_idxs.extend(B2I_dict[real_label])
+
+        # forbid I->I
+        for i in I_idxs:
+            for j in I_idxs:
+                trans[i][j] = -float('inf')
+
+        # forbid b-a1->i-a0
+        for b_idx in B_idxs:
+            if(b_idx in single_idxs):
+                # 只能是由一个词组成的论元,
+                for i_idx in I_idxs:
+                    trans[b_idx][i_idx] = -float('inf')
+            else:
+                # 可以由多个词组成的论元
+                for i_idx in I_idxs:
+                    trans[b_idx][i_idx] = -float('inf')
+                trans[b_idx][pair_dict[b_idx]] = 0
+        
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict, single_idxs
+
 
     def prepare_viterbi3(self):
         # for biiio

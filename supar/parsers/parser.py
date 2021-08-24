@@ -20,7 +20,8 @@ def change2(source_file, tgt_file, task):
     '''
     for BE
     '''
-    sum_false_count = 0
+    sum_conf1_count = 0
+    sum_conf2_count = 0
     if(task == '05'):
         word_idx_to_write = 2
     else:
@@ -93,8 +94,9 @@ def change2(source_file, tgt_file, task):
             ]
             # [[rel], [rel], [],...]
             this_prd_idx = value  # start from 1
-            this_column, count = produce_column_3(this_prd_arc, this_prd_idx)
-            sum_false_count += count
+            this_column, con1, con2 = produce_column_3(this_prd_arc, this_prd_idx)
+            sum_conf1_count += con1
+            sum_conf2_count += con2
             new_columns.append(this_column)
 
         new_sentence_lst = []
@@ -105,7 +107,8 @@ def change2(source_file, tgt_file, task):
                 new_line_lst.append(new_columns[j][i])
             new_sentence_lst.append(new_line_lst)
         new_sentence_lsts.append(new_sentence_lst)
-    print('conflict I-:'+str(sum_false_count))
+    print('conflict I-:'+str(sum_conf1_count))
+    print('conflict 2:'+str(sum_conf2_count))
     with open(tgt_file, 'w') as f:
         for new_sentence_lst in new_sentence_lsts:
             for line_lst in new_sentence_lst:
@@ -270,6 +273,7 @@ def produce_column_3(relas, prd_idx):
     # used for simple crosstag
     # 暂时是直接按照预测的B、I进行划分
     count = 0
+    count2 = 0
     column = []
     # span_start = -1
     i = 0
@@ -329,10 +333,11 @@ def produce_column_3(relas, prd_idx):
                     else:
                         length = span_end - span_start + 1
                         column += ['*'] * length
+                        count2 += 1
                 else:
                     column.append('(' + label + '*' + ')')
                     column += ['*'] * (i - 1 - span_start)
-    return column, count
+    return column, count, count2
 
 
 
