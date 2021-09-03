@@ -1245,11 +1245,13 @@ class VISrlModel(nn.Module):
         # [batch_size, seq_len]
         pred_mask = edge_preds[..., 0].eq(1) & mask
 
+        pred_predicate_num = pred_mask.sum().item()
+
         # [batch_size, seq_len]
         pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
-        k = pred_mask.sum()  # num of the conflict predicate
+        k = pred_mask.sum().item()  # num of the conflict predicate
         if(k <= 0):
-            return label_preds
+            return label_preds, pred_predicate_num, k
         
     
         # [batch_size, seq_len, seq_len, 2]
@@ -1321,7 +1323,7 @@ class VISrlModel(nn.Module):
         #     pdb.set_trace()
         #     new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
-        return label_preds
+        return label_preds, pred_predicate_num, k
 
     def detect_conflict(self, label_preds, pred_mask, B_idxs, I_idxs, prd_idx):
         """to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
@@ -1371,7 +1373,6 @@ class VISrlModel(nn.Module):
         pred_and_conflict = pred_mask.clone()
         pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
         return pred_and_conflict
-
 
     def detect_conflict2(self, label_preds, pred_mask, B_idxs, I_idxs, prd_idx):
         """to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
@@ -1512,7 +1513,7 @@ class VISrlModel(nn.Module):
 
         return label_preds
 
-    def viterbi_decode2(self, s_edge, s_label, strans, trans, mask, mask2, I_idxs, prd_idx, pair_dict):
+    def viterbi_decode2_1(self, s_edge, s_label, strans, trans, mask, mask2, I_idxs, prd_idx, pair_dict):
         # directly process edge sequence
 
         edge_preds = s_edge.ge(0.5).long()
@@ -1534,9 +1535,11 @@ class VISrlModel(nn.Module):
         k = pred_mask.sum()  # num of the conflict predicate
         if(k <= 0):
             return label_preds
-    
+            
         # [batch_size, seq_len, seq_len, raw_label_num]
+        s_label = s_label[..., :-1]
         label_probs = s_label.softmax(-1)
+        # label_probs = label_probs * s_edge.unsqueeze(-1).expand(-1,-1,-1,raw_label_num)
         # [batch_size, seq_len, seq_len]
         edge_mask[:, :, 0] = 0  # no need to consider prd edges
         # pdb.set_trace()

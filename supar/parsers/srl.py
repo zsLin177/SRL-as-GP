@@ -4,6 +4,7 @@ import pdb
 import subprocess
 import torch
 import torch.nn as nn
+from torch.serialization import load
 from supar.models import (BiaffineSrlModel,
                           VISrlModel)
 from supar.parsers.parser import Parser
@@ -806,11 +807,18 @@ class VISrlParser(BiaffineSrlParser):
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
 
-        strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2()
-        # strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
+        pred_sum = 0
+        con_sum = 0
+        # strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2_1()
+        # trans = self.prepare_detail_vtb(loader)
+        strans_3, trans_3, B_idxs_3, I_idxs_3, prd_idx_3 = self.prepare_viterbi()
         if(torch.cuda.is_available()):
-            strans = strans.cuda()
-            trans = trans.cuda()
+            # strans = strans.cuda()
+            # trans = trans.cuda()
+
+            strans_3 = strans_3.cuda()
+            trans_3 = trans_3.cuda()
+
 
         for words, *feats, edges, labels in progress_bar(loader):
             # pdb.set_trace()
@@ -840,11 +848,18 @@ class VISrlParser(BiaffineSrlParser):
                 # s_edge[batch_idx, no_pred_idx, 0] = 0
                 # s_edge[batch_idx, :, no_pred_idx] = 0
 
-                label_preds = self.model.viterbi_decode2(s_edge, s_label, strans, trans, mask2, mask, I_idxs, prd_idx, pair_dict)
-                # label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                # label_preds = self.model.viterbi_decode2_1(s_edge, s_label, strans, trans, mask2, mask, I_idxs, prd_idx, pair_dict)
+                label_preds, p_num, con_p_num = self.model.viterbi_decode3(s_edge, s_label, strans_3, trans_3, mask2, mask, B_idxs_3, I_idxs_3, prd_idx_3)
+                # pred_sum += p_num
+                # con_sum += con_p_num
+
+                # hard_edge = label_preds.ge(0)
+                # soft_edge = label_preds_3.ge(0)
+                # delta_mask = hard_edge.ne(soft_edge)
+
+                # delta_mask = label_preds.ne(label_preds_3)
+                # delta_edge_sum += delta_mask.sum().item()
                 
-                # label_preds[:, :, 0] = labels[:, :, 0]
-                # label_preds[batch_idx, :, no_pred_idx] = -1
 
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
@@ -858,6 +873,8 @@ class VISrlParser(BiaffineSrlParser):
                 [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
                  for row in chart]) for chart in preds['labels']
         ]
+        # print('sum of predicted predicates:', pred_sum, 'sum of conflicting predicates:', con_sum, end=' ')
+        # print('ratio of conficting predicates:', con_sum/pred_sum)
 
         return preds
 
@@ -914,10 +931,40 @@ class VISrlParser(BiaffineSrlParser):
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
 
-    def prepare_viterbi2(self):
+    @torch.no_grad()
+    def prepare_detail_vtb(self, loader):
+        trans_sum = [0] * (len(self.LABEL.vocab)-1)
+        trans = [[0] * (len(self.LABEL.vocab)-1) for _ in range((len(self.LABEL.vocab)-1))]
+        
+        for words, *feats, edges, labels in progress_bar(loader):
+            word_mask = words.ne(self.args.pad_index)
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            mask[:, 0] = 0
+            labels = labels.masked_fill(~mask, -1)
+            # [batch_size, seq_len]
+            pred_mask = labels[:, :, 0].eq(self.LABEL.vocab.stoi['[prd]'])
+            # [k, seq_len]
+            edge_label_seq = labels.transpose(1, 2)[pred_mask]
+            k = edge_label_seq.shape[0]
+            edge_label_seq = edge_label_seq.tolist()
+            for i in range(k):
+                tmp = [t for t in edge_label_seq[i] if t > -1]
+                if(len(tmp)<=1):
+                    continue
+                for j in range(0, len(tmp)-1):
+                    trans_sum[tmp[j]] += 1
+                    trans[tmp[j]][tmp[j+1]] += 1
+        
+        trans_sum, trans = torch.tensor(trans_sum), torch.tensor(trans)
+        trans_sum = trans_sum.masked_fill(trans_sum.eq(0), 1)
+        log_trans_pro = (trans/(trans_sum.unsqueeze(1))).log()
+        return log_trans_pro
+
+    def prepare_viterbi2_1(self):
         # directly process edge sequence
-        strans = [0] * len(self.LABEL.vocab)
-        trans = [[0] * len(self.LABEL.vocab) for _ in range(len(self.LABEL.vocab))]
+        strans = [0] * (len(self.LABEL.vocab)-1)
+        trans = [[0] * (len(self.LABEL.vocab)-1) for _ in range((len(self.LABEL.vocab)-1))]
         B_idxs = []
         I_idxs = []
         B2I_dict = {}
@@ -932,10 +979,7 @@ class VISrlParser(BiaffineSrlParser):
                 B2I_dict[label[2:]] = [i]
             elif(label == '[prd]'):
                 # label = [prd]
-                strans[i] = -float('inf')
-                trans[i] = [-float('inf')] * len(self.LABEL.vocab)
-                for j in range(len(trans)):
-                    trans[j][i] = -float('inf')
+                continue
         for i, label in enumerate(self.LABEL.vocab.itos):
             if(label.startswith('I-')):
                 real_label = label[2:]
@@ -969,7 +1013,6 @@ class VISrlParser(BiaffineSrlParser):
         
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict, single_idxs
 
-
     def prepare_viterbi3(self):
         # for biiio
         strans = [0] * (len(self.LABEL.vocab)+1)
@@ -1000,6 +1043,7 @@ class VISrlParser(BiaffineSrlParser):
             trans[-1][i] = -float('inf')
         
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+    
     @classmethod
     def build(cls,
               path,
