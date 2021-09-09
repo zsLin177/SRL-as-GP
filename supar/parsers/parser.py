@@ -300,10 +300,21 @@ def produce_column_3(relas, prd_idx):
             label = s_rel[2:]  # label直接按第一个边界的label
             if(position_tag == 'I'):
                 # pdb.set_trace()
+                # if(i!=len(relas)-1 and len(relas[i+1])>0 and relas[i+1][0][0]=='I'):
+                #     column.append('('+ label + '*')
+                #     column.append('*' + ')')
+                #     i += 2
+                # else:
+                #     #     column.append('*')   # 直接把冲突的I删掉
+                #     #     i += 1
+                #     # count += 1
+                #     column.append('(' + label + '*' + ')') # turn into b
+                #     # column.append('*')   # 直接把冲突的I删掉
+                #     i += 1
+                #     count += 1
                 column.append('*')   # 直接把冲突的I删掉
                 i += 1
                 count += 1
-                # pdb.set_trace()
             else:
             # if(position_tag in ('B', 'I')):
                 span_start = i
@@ -338,8 +349,6 @@ def produce_column_3(relas, prd_idx):
                     column.append('(' + label + '*' + ')')
                     column += ['*'] * (i - 1 - span_start)
     return column, count, count2
-
-
 
 def get_results(gold_path, pred_path, file_seed, task):
     _SRL_CONLL_EVAL_SCRIPT = 'conll05-original-style/eval.sh'
