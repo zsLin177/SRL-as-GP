@@ -26,6 +26,7 @@ results
 *.07
 *pred
 *.txt
+*final
 
 # pycache
 __pycache__
