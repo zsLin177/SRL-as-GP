@@ -1047,8 +1047,11 @@ class VISrlModel(nn.Module):
 
         # the affine layers
         self.fuse_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2, activation=False)
-        self.span_mlps = nn.Sequential(nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden * 2, n_lstm_hidden),
-                                        nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden, 1))
+        # self.span_mlps = nn.Sequential(nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden * 2, n_lstm_hidden),
+        #                                 nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden, 1))
+
+        self.span_mlps = nn.Sequential(MLP(n_in=n_lstm_hidden * 2, n_out=n_lstm_hidden),
+                                        MLP(n_in=n_lstm_hidden, n_out=1, activation=False))
         
         self.edge_attn = Biaffine(n_in=n_mlp_un, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
@@ -1077,7 +1080,6 @@ class VISrlModel(nn.Module):
         x, _ = self.span_lstm(x)
         x, _ = pad_packed_sequence(x, True, total_length=seq_len)
         x = self.span_lstm_dropout(x)
-
         batch_size = x.shape[0]
         temp_a = x.unsqueeze(1).expand(-1, seq_len, -1, -1)
         temp_b = x.unsqueeze(2).expand(-1, -1, seq_len, -1)
