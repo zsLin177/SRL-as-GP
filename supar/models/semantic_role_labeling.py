@@ -958,22 +958,13 @@ class VISrlModel(nn.Module):
             self.encoder_dropout = SharedDropout(p=lstm_dropout)
 
             self.span_lstm = LSTM(input_size=self.n_input,
-                                        hidden_size=n_lstm_hidden,
+                                        hidden_size=n_lstm_hidden//2,
                                         num_layers=n_lstm_layers,
                                         bidirectional=True,
                                         dropout=lstm_dropout)
             self.span_lstm_dropout = SharedDropout(p=lstm_dropout)
         
             # the MLP layers
-            self.mlp_span_head = MLP(n_in=n_lstm_hidden * 2,
-                                     n_out=n_mlp_span,
-                                     dropout=span_mlp_dropout,
-                                     activation=False)
-
-            self.mlp_span_end = MLP(n_in=n_lstm_hidden * 2,
-                                    n_out=n_mlp_span,
-                                    dropout=span_mlp_dropout,
-                                    activation=False)
 
             self.mlp_un_d = MLP(n_in=n_lstm_hidden * 2,
                                 n_out=n_mlp_un,
@@ -1055,8 +1046,10 @@ class VISrlModel(nn.Module):
                                 activation=False)
 
         # the affine layers
-        self.fuse_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2)
-        self.span_attn = Biaffine(n_in=n_mlp_span, bias_x=True, bias_y=True)
+        self.fuse_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2, activation=False)
+        self.span_mlps = nn.Sequential(nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden * 2, n_lstm_hidden),
+                                        nn.Dropout(p=span_mlp_dropout), nn.Linear(n_lstm_hidden, 1))
+        
         self.edge_attn = Biaffine(n_in=n_mlp_un, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
@@ -1086,14 +1079,16 @@ class VISrlModel(nn.Module):
         x = self.span_lstm_dropout(x)
 
         batch_size = x.shape[0]
-        span_d = self.mlp_span_end(x)
-        span_h = self.mlp_span_head(x)
+        temp_a = x.unsqueeze(1).expand(-1, seq_len, -1, -1)
+        temp_b = x.unsqueeze(2).expand(-1, -1, seq_len, -1)
+        # [batch_size, seq_len, seq_len, d]
+        span_repr = torch.cat((temp_b-temp_a, temp_b+temp_a), -1)
         # [batch_size, seq_len, seq_len] head->end
-        s_span = self.span_attn(span_d, span_h).permute(0, 2, 1)
-
+        s_span = self.span_mlps(span_repr).squeeze(-1)
         weight = MIN * x.new_ones(batch_size, seq_len, seq_len)
         weight = weight.masked_scatter(triu_mask, s_span).softmax(-1)
-        span_repr = torch.bmm(weight, x)
+        # [batch_size, seq_len, d]
+        span_repr = torch.matmul(weight.unsqueeze(1), span_repr)[:, range(seq_len), range(seq_len), :]
         return s_span, span_repr
 
     def gate(self, raw_repr, span_repr):
