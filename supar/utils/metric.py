@@ -165,6 +165,43 @@ class SrlMetric(Metric):
         return 2 * self.tp / (self.pred + self.gold + self.eps)
 
 
+class ArgumentMetric(Metric):
+    def __init__(self, eps=1e-12):
+        super().__init__()
+
+        self.utp = 0.0
+        self.pred = 0.0
+        self.gold = 0.0
+        self.eps = eps
+
+    def __call__(self, preds, golds):
+        pred_mask = preds.bool()
+        gold_mask = golds.bool()
+        span_mask = pred_mask & gold_mask
+        self.pred += pred_mask.sum().item()
+        self.gold += gold_mask.sum().item()
+        self.utp += span_mask.sum().item()
+        return self
+
+    def __repr__(self):
+        return f"UP: {self.up:6.2%} UR: {self.ur:6.2%} UF: {self.uf:6.2%}"
+
+    @property
+    def score(self):
+        return self.uf
+
+    @property
+    def up(self):
+        return self.utp / (self.pred + self.eps)
+
+    @property
+    def ur(self):
+        return self.utp / (self.gold + self.eps)
+
+    @property
+    def uf(self):
+        return 2 * self.utp / (self.pred + self.gold + self.eps)
+
 class SpanMetric(Metric):
 
     def __init__(self, eps=1e-12):

@@ -431,15 +431,15 @@ class Parser(object):
             logger.info(f"Epoch {epoch} / {args.epochs}:")
             self._train(train.loader)
             # loss, dev_metric = self._evaluate(dev.loader)
-            # dev_metric, dev_m2 = self._evaluate(dev.loader)
-            dev_metric = self._evaluate(dev.loader)
+            dev_metric, dev_m2 = self._evaluate(dev.loader)
+            # dev_metric = self._evaluate(dev.loader)
             logger.info(f"{'dev:':5} - {dev_metric}")
-            # logger.info(f"{'dev:':5} - {dev_m2}")
+            logger.info(f"{'dev:':5} - {dev_m2}")
 
-            test_metric = self._evaluate(test.loader)
-            # test_metric, test_m2 = self._evaluate(test.loader)
+            # test_metric = self._evaluate(test.loader)
+            test_metric, test_m2 = self._evaluate(test.loader)
             logger.info(f"{'test:':5} - {test_metric}")
-            # logger.info(f"{'test:':5} - {test_m2}")
+            logger.info(f"{'test:':5} - {test_m2}")
 
             t = datetime.now() - start
             # save the model if it is the best so far
@@ -454,7 +454,7 @@ class Parser(object):
             if epoch - best_e >= args.patience:
                 break
         # loss, metric = self.load(**args)._evaluate(test.loader)
-        metric = self.load(**args)._evaluate(test.loader)
+        metric, m2 = self.load(**args)._evaluate(test.loader)
         # metric = self.load(**args)._evaluate(dev.loader)
 
         logger.info(f"Epoch {best_e} saved")
@@ -475,12 +475,12 @@ class Parser(object):
         logger.info("Evaluating the dataset")
         start = datetime.now()
         # loss, metric = self._evaluate(dataset.loader)
-        metric = self._evaluate(dataset.loader)
-        # metric, m2 = self._evaluate(dataset.loader)
+        # metric = self._evaluate(dataset.loader)
+        metric, m2 = self._evaluate(dataset.loader)
         elapsed = datetime.now() - start
         # logger.info(f"loss: {loss:.4f} - {metric}")
         logger.info(f"- {metric}")
-        # logger.info(f"- {m2}")
+        logger.info(f"- {m2}")
         logger.info(
             f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s"
         )

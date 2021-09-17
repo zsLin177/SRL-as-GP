@@ -13,7 +13,7 @@ from supar.utils.fn import pad
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import pdb
 from torch.nn.utils.rnn import pad_sequence
-
+from supar.utils.common import MIN
 
 class BiaffineSrlModel(nn.Module):
     r"""
@@ -665,7 +665,6 @@ class BiaffineSrlModel(nn.Module):
         return edge_preds, label_preds
 
 
-
     def viterbi_decode(self, s_edge, s_label, strans, trans, mask, mask2):
         edge_preds = s_edge.argmax(-1)
         label_preds = s_label.argmax(-1)
@@ -731,6 +730,7 @@ class BiaffineSrlModel(nn.Module):
 
         # pdb.set_trace()
         return edge_preds, label_preds
+
 
     def viterbi_decode2(self, s_edge, s_label, strans, trans, mask, mask2):
         edge_preds = s_edge.argmax(-1)
@@ -896,9 +896,11 @@ class VISrlModel(nn.Module):
                  n_mlp_un=600,
                  n_mlp_bin=150,
                  n_mlp_label=600,
+                 n_mlp_span=150,
                  un_mlp_dropout=.25,
                  bin_mlp_dropout=.25,
                  label_mlp_dropout=.33,
+                 span_mlp_dropout=0.2,
                  inference='mfvi',
                  max_iter=3,
                  interpolation=0.1,
@@ -954,8 +956,25 @@ class VISrlModel(nn.Module):
                                 bidirectional=True,
                                 dropout=lstm_dropout)
             self.encoder_dropout = SharedDropout(p=lstm_dropout)
+
+            self.span_lstm = LSTM(input_size=self.n_input,
+                                        hidden_size=n_lstm_hidden,
+                                        num_layers=n_lstm_layers,
+                                        bidirectional=True,
+                                        dropout=lstm_dropout)
+            self.span_lstm_dropout = SharedDropout(p=lstm_dropout)
         
             # the MLP layers
+            self.mlp_span_head = MLP(n_in=n_lstm_hidden * 2,
+                                     n_out=n_mlp_span,
+                                     dropout=span_mlp_dropout,
+                                     activation=False)
+
+            self.mlp_span_end = MLP(n_in=n_lstm_hidden * 2,
+                                    n_out=n_mlp_span,
+                                    dropout=span_mlp_dropout,
+                                    activation=False)
+
             self.mlp_un_d = MLP(n_in=n_lstm_hidden * 2,
                                 n_out=n_mlp_un,
                                 dropout=un_mlp_dropout,
@@ -1036,6 +1055,8 @@ class VISrlModel(nn.Module):
                                 activation=False)
 
         # the affine layers
+        self.fuse_mlp = MLP(n_in=n_lstm_hidden * 4, n_out=n_lstm_hidden * 2)
+        self.span_attn = Biaffine(n_in=n_mlp_span, bias_x=True, bias_y=True)
         self.edge_attn = Biaffine(n_in=n_mlp_un, bias_x=True, bias_y=True)
         self.sib_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
         self.cop_attn = Triaffine(n_in=n_mlp_bin, bias_x=True, bias_y=True)
@@ -1051,12 +1072,35 @@ class VISrlModel(nn.Module):
         self.pad_index = pad_index
         self.unk_index = unk_index
 
+        self.gate_weight1 = nn.Parameter(torch.zeros(n_lstm_hidden * 2, n_lstm_hidden * 2))
+        self.gate_weight2 = nn.Parameter(torch.zeros(n_lstm_hidden * 2, n_lstm_hidden * 2))
+
     def load_pretrained(self, embed=None):
         if embed is not None:
             self.pretrained = nn.Embedding.from_pretrained(embed)
         return self
 
-    def forward(self, words, feats):
+    def span_dect_forward(self, x, seq_len, triu_mask):
+        x, _ = self.span_lstm(x)
+        x, _ = pad_packed_sequence(x, True, total_length=seq_len)
+        x = self.span_lstm_dropout(x)
+
+        batch_size = x.shape[0]
+        span_d = self.mlp_span_end(x)
+        span_h = self.mlp_span_head(x)
+        # [batch_size, seq_len, seq_len] head->end
+        s_span = self.span_attn(span_d, span_h).permute(0, 2, 1)
+
+        weight = MIN * x.new_ones(batch_size, seq_len, seq_len)
+        weight = weight.masked_scatter(triu_mask, s_span).softmax(-1)
+        span_repr = torch.bmm(weight, x)
+        return s_span, span_repr
+
+    def gate(self, raw_repr, span_repr):
+        # return [batch_size, seq_len, ...]
+        return torch.sigmoid(torch.matmul(self.gate_weight1, raw_repr.permute(0, 2, 1)) + torch.matmul(self.gate_weight2, span_repr.permute(0, 2, 1))).permute(0, 2, 1) * span_repr
+
+    def forward(self, words, feats, triu_mask):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -1105,17 +1149,20 @@ class VISrlModel(nn.Module):
         # concatenate the word and feat representations
         embed = torch.cat((word_embed, feat_embed), -1)
 
-        if (self.args.encoder == 'lstm'):
+        # if (self.args.encoder == 'lstm'):
         # BiLSTM
-            x = pack_padded_sequence(embed, mask.sum(1).tolist(), True, False)
-            x, _ = self.encoder(x)
-            x, _ = pad_packed_sequence(x, True, total_length=seq_len)
-            x = self.encoder_dropout(x)
+        input = pack_padded_sequence(embed, mask.sum(1).tolist(), True, False)
+        x, _ = self.encoder(input)
+        x, _ = pad_packed_sequence(x, True, total_length=seq_len)
+        x = self.encoder_dropout(x)
+        s_span, span_repr = self.span_dect_forward(input, seq_len, triu_mask)
+        span_repr = self.gate(x, span_repr)
+        x = self.fuse_mlp(torch.cat((x, span_repr), -1))
 
             # HighwayBiLSTM
             # x, (h_n, c_n), outputs = self.lstm(embed, mask)
-        else:
-            x = self.encoder(embed, ~mask)
+        # else:
+        #     x = self.encoder(embed, ~mask)
 
         # apply MLPs to the BiLSTM output states
 
@@ -1142,9 +1189,9 @@ class VISrlModel(nn.Module):
 
         # s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        return s_edge, s_sib, s_cop, s_grd, x
+        return s_edge, s_sib, s_cop, s_grd, s_span, x
 
-    def loss(self, s_edge, s_sib, s_cop, s_grd, x, edges, labels, mask, mask2, if_eval=False):
+    def loss(self, s_edge, s_sib, s_cop, s_grd, s_span, x, edges, labels, spans, triu_mask, mask, mask2, if_eval=False):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -1169,6 +1216,8 @@ class VISrlModel(nn.Module):
                 The training loss.
         """
         if(not if_eval):
+            span_loss = F.binary_cross_entropy_with_logits(s_span[triu_mask], spans[triu_mask].float())
+
             edge_mask = edges.gt(0) & mask
             edge_loss, marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask,
                                         edge_mask.long())
@@ -1194,9 +1243,9 @@ class VISrlModel(nn.Module):
                 label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
                 loss = self.interpolation * label_loss + (
                     1 - self.interpolation) * edge_loss
-                return loss, marginals, s_label
+                return loss + span_loss, marginals, s_label
             else:
-                return edge_loss, marginals, s_label
+                return edge_loss + span_loss, marginals, s_label
         else:
             marginals = self.vi((s_edge, s_sib, s_cop, s_grd), mask)
             if(not self.args.split):

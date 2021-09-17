@@ -13,7 +13,7 @@ from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled, ElmoField
 from supar.utils.logging import get_logger, progress_bar
 from supar.utils.logging import init_logger, logger
-from supar.utils.metric import ChartMetric, SrlMetric
+from supar.utils.metric import ChartMetric, SrlMetric, ArgumentMetric
 from supar.utils.transform import CoNLL
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
@@ -54,9 +54,7 @@ class BiaffineSrlParser(Parser):
         self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        # self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
-        self.EDGE, self.LABEL = self.transform.PHEAD
-        # self.bi2label, self.I_idxs, self.B_idxs = self.idx_prepare()
+        self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
         
     def idx_prepare(self):
         bi2label = {}
@@ -644,7 +642,7 @@ class VISrlParser(BiaffineSrlParser):
         self.WORD, self.CHAR, self.ELMO, self.BERT = self.transform.FORM
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
-        self.EDGE, self.LABEL = self.transform.PHEAD
+        self.EDGE, self.LABEL, self.SPAN = self.transform.PHEAD
 
     def train(self,
               train,
@@ -735,17 +733,18 @@ class VISrlParser(BiaffineSrlParser):
 
         bar, metric = progress_bar(loader), ChartMetric()
 
-        for i, (words, *feats, edges, labels) in enumerate(bar, 1):
-            # self.optimizer.zero_grad()
-
+        for i, (words, *feats, edges, labels, spans) in enumerate(bar, 1):
+            # [batch_size, seq_len, seq_len]
+            spans = spans.gt(-1).sum(1).gt(0).long()
             mask = words.ne(self.WORD.pad_index)
             mask2 = mask.clone()
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            triu_mask = torch.ones_like(spans, dtype=torch.long).bool().triu() & mask
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2)
+            s_edge, s_sib, s_cop, s_grd, s_span, x = self.model(words, feats, triu_mask)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_span,
+                                           x, edges, labels, spans, triu_mask, mask, mask2)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -773,18 +772,20 @@ class VISrlParser(BiaffineSrlParser):
         self.model.eval()
 
         total_loss, metric = 0, SrlMetric()
-
-        for words, *feats, edges, labels in loader:
+        span_metric = ArgumentMetric()
+        for words, *feats, edges, labels, spans in loader:
+            spans = spans.gt(-1).sum(1).gt(0).long()
             mask = words.ne(self.WORD.pad_index)
             mask2 = mask.clone()
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            triu_mask = torch.ones_like(spans, dtype=torch.long).bool().triu() & mask
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            s_edge, s_sib, s_cop, s_grd, s_span, x = self.model(words, feats, triu_mask)
             # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
             #                                s_label, edges, labels, mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2, True)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_span,
+                                           x, edges, labels, spans, triu_mask, mask, mask2, True)
             # total_loss += loss.item()
 
             # edge_preds, label_preds = self.model.decode(s_edge, s_label)
@@ -794,11 +795,13 @@ class VISrlParser(BiaffineSrlParser):
             label_preds = self.model.decode(s_edge, s_label)
             metric(label_preds.masked_fill(~mask, -1),
                    labels.masked_fill(~mask, -1))
+            span_metric(s_span.ge(0).long().masked_fill(~triu_mask, 0),
+                        spans.masked_fill(~triu_mask, 0))
 
         # total_loss /= len(loader)
 
         # return total_loss, metric
-        return metric
+        return metric, span_metric
 
     @torch.no_grad()
     def _predict(self, loader):
@@ -820,19 +823,20 @@ class VISrlParser(BiaffineSrlParser):
             trans_3 = trans_3.cuda()
 
 
-        for words, *feats, edges, labels in progress_bar(loader):
+        for words, *feats, edges, labels, spans in progress_bar(loader):
             # pdb.set_trace()
             word_mask = words.ne(self.args.pad_index)
             mask2 = word_mask.clone()
             mask2[:, 0] = 0
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            triu_mask = torch.ones_like(spans, dtype=torch.long).bool().triu() & mask
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            s_edge, s_sib, s_cop, s_grd, s_span, x = self.model(words, feats, triu_mask)
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, edges, labels, mask, mask2, True)
+            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd, s_span,
+                                           x, edges, labels, spans, triu_mask, mask, mask2, True)
             if(not self.args.vtb):
                 label_preds = self.model.decode(s_edge,
                                             s_label).masked_fill(~mask, -1)
@@ -1088,7 +1092,7 @@ class VISrlParser(BiaffineSrlParser):
 
         logger.info("Building the fields")
         WORD = Field('words', pad=pad, unk=unk, bos=bos, lower=True)
-        TAG, CHAR, LEMMA, BERT, ELMO = None, None, None, None, None
+        TAG, CHAR, LEMMA, BERT, ELMO, SPAN = None, None, None, None, None, None
         if 'tag' in args.feat:
             TAG = Field('tags', bos=bos)
         if 'char' in args.feat:
@@ -1113,10 +1117,11 @@ class VISrlParser(BiaffineSrlParser):
             BERT.vocab = tokenizer.get_vocab()
         EDGE = ChartField('edges', use_vocab=False, fn=CoNLL.get_edges)
         LABEL = ChartField('labels', fn=CoNLL.get_labels)
+        SPAN = SpanSrlFiled('spans', build_fn=CoNLL.get_span_labels, fn=CoNLL.get_spans)
         transform = CoNLL(FORM=(WORD, CHAR, ELMO, BERT),
                           LEMMA=LEMMA,
                           POS=TAG,
-                          PHEAD=(EDGE, LABEL))
+                          PHEAD=(EDGE, LABEL, SPAN))
 
         train = Dataset(transform, args.train)
         WORD.build(
@@ -1129,8 +1134,7 @@ class VISrlParser(BiaffineSrlParser):
         if LEMMA is not None:
             LEMMA.build(train)
         LABEL.build(train)
-        # if(args.use_pred):
-        #     LABEL.vocab.extend(['Other'])
+        SPAN.build(train)
         args.update({
             'n_words': WORD.vocab.n_init,
             'n_labels': len(LABEL.vocab),
