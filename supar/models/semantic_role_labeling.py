@@ -1087,8 +1087,12 @@ class VISrlModel(nn.Module):
         span_repr = torch.cat((temp_b-temp_a, temp_b+temp_a), -1)
         # [batch_size, seq_len, seq_len] head->end
         s_span = self.span_mlps(span_repr).squeeze(-1)
-        weight = MIN * x.new_ones(batch_size, seq_len, seq_len)
-        weight = weight.masked_scatter(triu_mask, s_span).softmax(-1)
+        # weight = MIN * x.new_ones(batch_size, seq_len, seq_len)
+        # weight = weight.masked_scatter(triu_mask, s_span).softmax(-1)
+
+        weight = x.new_zeros(batch_size, seq_len, seq_len)
+        weight = weight.masked_scatter(triu_mask, s_span.sigmoid())
+
         # [batch_size, seq_len, d]
         span_repr = torch.matmul(weight.unsqueeze(1), span_repr)[:, range(seq_len), range(seq_len), :]
         return s_span, span_repr
