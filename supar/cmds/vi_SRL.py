@@ -26,7 +26,7 @@ def main():
                            default=300,
                            type=int,
                            help='dimension of pretrained embeddings')
-    subparser.add_argument('--bert', default='bert-base-cased', help='which bert model to use')
+    subparser.add_argument('--bert', default='bert-large-uncased', help='which bert model to use')
     subparser.add_argument('--itp', default=0.1, type=float, help='inter...')
     subparser.add_argument('--inference', default='mfvi', choices=['mfvi', 'lbp'], help='approximate inference methods')
     subparser.add_argument('--n_lstm_layers', default=3, type=int)
