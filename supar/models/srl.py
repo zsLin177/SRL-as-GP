@@ -630,7 +630,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         return s_edge, s_sib, s_cop, s_grd, x
 
 
-    def loss(self, s_edge, s_sib, s_cop, s_grd, x, labels, mask):
+    def loss(self, s_edge, s_sib, s_cop, s_grd, x, labels, mask, if_pred=False):
         r"""
         Args:
             s_edge (~torch.Tensor): ``[batch_size, seq_len, seq_len]``.
@@ -652,33 +652,51 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
             ~torch.Tensor:
                 The training loss.
         """
-
-        edge_mask = labels.ge(0) & mask
-        edge_loss, marginals = self.inference((s_edge, s_sib, s_cop, s_grd),
-                                              mask, edge_mask.long())
-        if(not self.args.split):
-            label_h = self.mlp_label_h(x)
-            label_d = self.mlp_label_d(x)
+        if(if_pred):
+            marginals = self.inference((s_edge, s_sib, s_cop, s_grd), mask)
+            if(not self.args.split):
+                label_h = self.mlp_label_h(x)
+                label_d = self.mlp_label_d(x)
+            else:
+                edge_pred = marginals.ge(0.5).long()
+                if_prd = edge_pred[..., 0].eq(1) & mask[:, :, 0]
+                # if_prd = edge_pred[..., 0].eq(1)
+                label_d = self.arg_label_d(x)
+                label_h = self.arg_label_h(x)
+                prd_d = self.prd_label_d(x[if_prd])
+                prd_h = self.prd_label_h(x[if_prd])
+                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+                label_d = label_d.masked_scatter(if_prd, prd_d)
+                label_h = label_h.masked_scatter(if_prd, prd_h)
+            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+            return marginals, s_label
         else:
-            edge_pred = marginals.ge(0.5).long()
-            if_prd = edge_pred[..., 0].eq(1) & mask[:, :, 0]
-            # if_prd = edge_pred[..., 0].eq(1)
-            label_d = self.arg_label_d(x)
-            label_h = self.arg_label_h(x)
-            prd_d = self.prd_label_d(x[if_prd])
-            prd_h = self.prd_label_h(x[if_prd])
-            if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
-            label_d = label_d.masked_scatter(if_prd, prd_d)
-            label_h = label_h.masked_scatter(if_prd, prd_h)
-        s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
+            edge_mask = labels.ge(0) & mask
+            edge_loss, marginals = self.inference((s_edge, s_sib, s_cop, s_grd),
+                                                mask, edge_mask.long())
+            if(not self.args.split):
+                label_h = self.mlp_label_h(x)
+                label_d = self.mlp_label_d(x)
+            else:
+                edge_pred = marginals.ge(0.5).long()
+                if_prd = edge_pred[..., 0].eq(1) & mask[:, :, 0]
+                # if_prd = edge_pred[..., 0].eq(1)
+                label_d = self.arg_label_d(x)
+                label_h = self.arg_label_h(x)
+                prd_d = self.prd_label_d(x[if_prd])
+                prd_h = self.prd_label_h(x[if_prd])
+                if_prd = if_prd.unsqueeze(-1).expand(-1, -1, label_d.shape[-1])
+                label_d = label_d.masked_scatter(if_prd, prd_d)
+                label_h = label_h.masked_scatter(if_prd, prd_h)
+            s_label = self.label_attn(label_d, label_h).permute(0, 2, 3, 1)
 
-        if(edge_mask.any()):
-            label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
-            loss = self.args.interpolation * label_loss + (
-                1 - self.args.interpolation) * edge_loss
-            return loss, marginals, s_label
-        else:
-            return edge_loss, marginals, s_label
+            if(edge_mask.any()):
+                label_loss = self.criterion(s_label[edge_mask], labels[edge_mask])
+                loss = self.args.interpolation * label_loss + (
+                    1 - self.args.interpolation) * edge_loss
+                return loss, marginals, s_label
+            else:
+                return edge_loss, marginals, s_label
 
     def decode(self, s_edge, s_label):
         r"""

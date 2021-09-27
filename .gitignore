@@ -18,6 +18,7 @@ dist
 # experimental results
 exp
 results
+bert-*
 
 # log and config files
 *.log

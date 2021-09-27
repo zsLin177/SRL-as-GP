@@ -406,6 +406,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         self.LABEL = self.transform.PHEAD
+        self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx = self.prepare_viterbi()
 
     def train(self,
               train,
@@ -556,7 +557,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         self.model.eval()
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
-        strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
+        strans, trans, B_idxs, I_idxs, prd_idx = self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx
         if(torch.cuda.is_available()):
             strans = strans.cuda()
             trans = trans.cuda()
@@ -571,22 +572,22 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             lens = mask[:, 1].sum(-1).tolist()
             s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
             # s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, labels, mask)
-            if(not self.args.vtb):
-                label_preds = self.model.decode(s_edge,
-                                            s_label).masked_fill(~mask, -1)
-            else:
-                label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, labels, mask, True)
+            # if(not self.args.vtb):
+            #     label_preds = self.model.decode(s_edge,
+            #                                 s_label).masked_fill(~mask, -1)
+            # else:
+            label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
 
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
-            if self.args.prob:
-                preds['probs'].extend([
-                    prob[1:i, :i].cpu()
-                    for i, prob in zip(lens,
-                                       s_edge.softmax(-1).unbind())
-                ])
+            # if self.args.prob:
+            #     preds['probs'].extend([
+            #         prob[1:i, :i].cpu()
+            #         for i, prob in zip(lens,
+            #                            s_edge.softmax(-1).unbind())
+            #     ])
         # pdb.set_trace()
         preds['labels'] = [
             CoNLL.build_relations(
@@ -647,7 +648,6 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         
         # pdb.set_trace()
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
-
 
 
     @classmethod
