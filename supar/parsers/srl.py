@@ -598,6 +598,121 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         return preds
 
     
+    @torch.no_grad()
+    def _api(self, loader):
+        self.model.eval()
+        strans, trans, B_idxs, I_idxs, prd_idx = self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx
+        batch_tuple_lists = []
+        if(torch.cuda.is_available()):
+            strans = strans.cuda()
+            trans = trans.cuda()
+        for words, *feats, labels in progress_bar(loader):
+            word_mask = words.ne(self.args.pad_index)
+            # mask2 = word_mask.clone()
+            # mask2[:, 0] = 0
+            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            mask = mask.unsqueeze(1) & mask.unsqueeze(2)
+            mask[:, 0] = 0
+            n_mask = mask[:, :, 0]
+            lens = mask[:, 1].sum(-1).tolist()
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            # s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
+            s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, labels, mask, True)
+            # if(not self.args.vtb):
+            #     label_preds = self.model.decode(s_edge,
+            #                                 s_label).masked_fill(~mask, -1)
+            # else:
+            label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            tuples = self.build_spans(label_preds)
+            batch_tuple_lists.append(tuples)
+
+        return batch_tuple_lists
+
+    
+    def build_spans(self, label_pred):
+        # label_pred: [batch_size, seq_len, seq_len]
+        # return [batch_size, seq_len, seq_len, seq_len] -> [tuples] tuple:[sent_idx_inbatch, pred_idx, span_start_idx, span_end_idx, label] 
+        prd_idx = self.prd_idx
+
+        batch_size, seq_len = label_pred.shape[0], label_pred.shape[1]
+        # [batch_size, seq_len]
+        pred_mask = label_pred[..., 0].ne(-1)
+        pred_mask[:, 0] = 0
+
+        k = pred_mask.sum()
+        if(k <= 0):
+            return []
+        
+        pred_idxs = pred_mask.nonzero()
+        batch_idx = pred_idxs[:, 0]
+        pred_word_idx = pred_idxs[:, 1]
+        # [k, seq_len]
+        predicate_label_seq = label_pred[batch_idx, :, pred_word_idx]
+        predicate_label_seq = predicate_label_seq.masked_fill(predicate_label_seq.eq(prd_idx), -1)
+
+        lst = predicate_label_seq.tolist()
+        b_idx = []
+        s_idx = []
+        e_idx = []
+        span_label_idx = []
+        for i in range(k):
+            seq = lst[i][1:]  # [seq_len-1]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                elif(seq[j] in self.I_idxs):
+                    j += 1  # delete conflict I (it is so helpful)
+                    # maybe set a gap p(I_idx)>0.5 
+                else:
+                    span_start = j
+                    span_end = -1
+                    label1_idx = seq[j]
+                    label1 = self.LABEL.vocab.itos[label1_idx][2:]
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] in self.B_idxs):
+                            break
+                        else:
+                            span_end = j
+                            label2_idx = seq[j]
+                            label2 = self.LABEL.vocab.itos[label2_idx][2:]
+                            j += 1
+                            break
+                    
+                    if(span_end != -1):
+                        if(label1 == label2):
+                            # 前后不一样的删去
+                            s_idx.append(span_start+1)
+                            e_idx.append(span_end+1)
+                            span_label_idx.append(label1_idx)
+                            b_idx.append(i)
+                    else:
+                        s_idx.append(span_start+1)
+                        e_idx.append(span_start+1)
+                        b_idx.append(i)
+                        span_label_idx.append(label1_idx)
+
+        k_spans = -torch.ones((k, seq_len, seq_len), device=label_pred.device).long()
+        k_spans_mask = k_spans.gt(-1)
+        k_spans_mask[b_idx, s_idx, e_idx] = True
+        k_spans = k_spans.masked_scatter(k_spans_mask, k_spans.new_tensor(span_label_idx))
+
+        back_mask = pred_mask.unsqueeze(-1).expand(-1, -1, seq_len).unsqueeze(-1).expand(-1, -1, -1,seq_len)
+        spans = -torch.ones((batch_size, seq_len, seq_len, seq_len), device=label_pred.device).long()
+        spans = spans.masked_scatter(back_mask, k_spans)
+        label_mask = spans.gt(-1)
+        res_lists = label_mask.nonzero(as_tuple=False).tolist()
+        label_idxs = spans[label_mask].tolist()
+        labels_list = [self.LABEL.vocab.itos[t_idx][2:] for t_idx in label_idxs]
+        for i in range(len(res_lists)):
+            res_lists[i].append(labels_list[i])
+        return res_lists
+
     def prepare_viterbi(self):
         # [n_labels+2]
         strans = [0] * (len(self.LABEL.vocab)+2)

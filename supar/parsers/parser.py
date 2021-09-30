@@ -336,19 +336,15 @@ class Parser(object):
     def api(self, input, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         """
         input: a string like "中国 建筑业 对 外 开放 始于 八十年代 。"
+        return: spans
         """
         args = self.args.update(locals())
         pred = 'pred_span_srl.conllu'
         self.transform.train()
         dataset = Dataset(self.transform, input, lang=lang)
         dataset.build(args.batch_size, args.buckets)
-        preds = self._predict(dataset.loader)
-
-        for name, value in preds.items():
-            setattr(dataset, name, value)
-        if pred is not None and is_master():
-            self.transform.save(pred, dataset.sentences)
-        return dataset
+        preds = self._api(dataset.loader)
+        return preds
 
 
     def _train(self, loader):
@@ -360,6 +356,10 @@ class Parser(object):
 
     @torch.no_grad()
     def _predict(self, loader):
+        raise NotImplementedError
+    
+    @torch.no_grad()
+    def _api(self, loader):
         raise NotImplementedError
 
     @classmethod
