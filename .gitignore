@@ -14,6 +14,7 @@ docs/_build
 build
 dist
 *.egg-info
+load_and_parse_forcup.py
 
 # experimental results
 exp

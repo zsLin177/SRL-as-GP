@@ -61,5 +61,4 @@ def parse(parser):
         parser.evaluate(**args)
     elif args.mode == 'predict':
         parser = Parser.load(args.path)
-        # parser.predict(**args)
-        parser.api('中国 建筑业 对 外 开放 始于 八十年代 。')
+        parser.predict(**args)
