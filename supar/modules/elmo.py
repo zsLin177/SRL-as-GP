@@ -2,7 +2,6 @@ import allennlp.modules.elmo
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pdb
 
 class Elmo(allennlp.modules.elmo.Elmo):
     def __init__(self, layer=3, dropout=0.33, if_requires_grad=False):
@@ -30,10 +29,6 @@ class Elmo(allennlp.modules.elmo.Elmo):
         self.if_requires_grad = if_requires_grad
         self.gamma = nn.Parameter(torch.FloatTensor([1.0]))
         self.softmax_weights = nn.ParameterList([nn.Parameter(torch.FloatTensor([0.0])) for _ in range(layer)])
-        # self.reset_parameters()
-
-    # def reset_parameters(self):
-    #     nn.init.normal_(self.softmax.weight, 0.0, 0.01)  # softmax layer
 
     def forward(self, chars, word_inputs=None):
         """
