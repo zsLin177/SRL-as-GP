@@ -3,6 +3,7 @@ data
 exp
 conll05-original-style
 old_data
+bert-base-chinese
 
 # bash scripts
 *.sh
@@ -14,6 +15,7 @@ docs/_build
 build
 dist
 *.egg-info
+load_and_parse*
 
 # experimental results
 exp
