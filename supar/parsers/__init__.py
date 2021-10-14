@@ -5,7 +5,7 @@ from .dep import (BiaffineDependencyParser, CRF2oDependencyParser,
                   CRFDependencyParser, VIDependencyParser)
 from .parser import Parser
 from .sdp import BiaffineSemanticDependencyParser, VISemanticDependencyParser
-from .srl import BiaffineSemanticRoleLabelingParser, VISemanticRoleLabelingParser
+from .srl import BiaffineSemanticRoleLabelingParser, VISemanticRoleLabelingParser, GnnLabelInteractionSemanticRoleLabelingParser
 
 __all__ = ['BiaffineDependencyParser',
            'CRFDependencyParser',
@@ -17,4 +17,5 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser',
            'BiaffineSemanticRoleLabelingParser',
-           'VISemanticRoleLabelingParser']
+           'VISemanticRoleLabelingParser',
+           'GnnLabelInteractionSemanticRoleLabelingParser']

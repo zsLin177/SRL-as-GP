@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import pdb
+from typing import no_type_check_decorator
 import torch.nn as nn
 from supar.models.model import Model
 from supar.modules import MLP, Biaffine, Triaffine
@@ -853,3 +855,198 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         #     new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
         return label_preds
+
+class GLISemanticRoleLabelingModel(Model):
+    r"""
+    TODO: introduction
+    """
+    def __init__(self,
+                 n_words,
+                 n_labels,
+                 n_tags=None,
+                 n_chars=None,
+                 n_lemmas=None,
+                 feat=['tag', 'char', 'lemma'],
+                 n_embed=100,
+                 n_pretrained=125,
+                 n_feat_embed=100,
+                 n_char_embed=50,
+                 n_char_hidden=400,
+                 char_pad_index=0,
+                 char_dropout=0.33,
+                 bert=None,
+                 n_bert_layers=4,
+                 mix_dropout=.0,
+                 bert_pooling='mean',
+                 bert_pad_index=0,
+                 freeze=True,
+                 embed_dropout=.2,
+                 n_lstm_hidden=600,
+                 n_lstm_layers=3,
+                 encoder_dropout=.33,
+                 n_mlp_predicate=100,
+                 n_mlp_argument=100,
+                 n_mlp_relation=100,
+                 repr_mlp_dropout=.25,
+                 scorer_mlp_dropout=.2,
+                 interpolation=0.1,
+                 pad_index=0,
+                 unk_index=1,
+                 split=True,
+                 **kwargs):
+        super().__init__(**Config().update(locals()))
+        self.n_labels = n_labels
+        self.n_mlp_predicate = n_mlp_predicate
+        self.n_mlp_argument = n_mlp_argument
+        self.n_mlp_relation = n_mlp_relation
+
+        self.predicate_repr_mlp = MLP(n_in=self.args.n_hidden, 
+                                    n_out=n_mlp_predicate,
+                                    dropout=repr_mlp_dropout)
+        self.arg_word_repr_mlp = MLP(n_in=self.args.n_hidden,
+                                    n_out=n_mlp_argument,
+                                    dropout=repr_mlp_dropout)
+        self.predicate_scorer = nn.Sequential(
+                                            MLP(n_in=n_mlp_predicate,
+                                                n_out=n_mlp_predicate//2,
+                                                dropout=scorer_mlp_dropout),
+                                            MLP(n_in=n_mlp_predicate//2,
+                                                n_out=1,
+                                                activation=False)
+                                            )
+        self.argument_scorer = nn.Sequential(
+                                            MLP(n_in=n_mlp_argument,
+                                                n_out=n_mlp_argument//2,
+                                                dropout=scorer_mlp_dropout),
+                                            MLP(n_in=n_mlp_argument//2,
+                                                n_out=1,
+                                                activation=False)
+                                            )
+        self.relation_init_mlp = MLP(n_in=n_mlp_argument+n_mlp_predicate,
+                                    n_out=n_mlp_relation,
+                                    dropout=repr_mlp_dropout)
+        self.relation_scorer = MLP(n_in=n_mlp_relation,
+                                    n_out=n_labels,
+                                    activation=False)
+        self.bce_criterion = nn.BCEWithLogitsLoss()
+        self.ce_criterion = nn.CrossEntropyLoss()
+
+    def forward(self, words, span_mask, feats=None):
+        # [batch_size, 2+seq_len, n_hidden]
+        x = self.encode(words, feats)
+        # [batch_size, 2+seq_len, n_mlp_predicate]
+        predicate_repr = self.predicate_repr_mlp(x)
+        # [batch_size, 2+seq_len, n_mlp_argument]
+        arg_word_repr = self.arg_word_repr_mlp(x)
+        # (t0, t1, t2, t3) ti:[batch_size, 2+seq_len, n_mlp_argument//4]
+        split_tup = torch.split(arg_word_repr, self.n_mlp_argument//4, -1)
+        # seq_all_len = 2+seq_len
+        batch_size, seq_all_len, _ = split_tup[0].shape
+        tmp_lst = []
+        for i in range(0, 4, 2):
+            expanded0 = split_tup[i].unsqueeze(2).expand(-1, -1, seq_all_len, -1)
+            expanded1 = split_tup[i+1].unsqueeze(1).expand(-1, seq_all_len, -1, -1)
+            tmp_lst.append(expanded0)
+            tmp_lst.append(expanded1)
+        # [batch_size, 2+seq_len, 2+seq_len, n_mlp_argument]
+        argument_repr = torch.cat(tmp_lst, -1)
+        # [real_num, n_mlp_argument] real_num = delete padded spans
+        masked_arg_repr = argument_repr[span_mask]
+        # [batch_size, 2+seq_len]
+        predicate_score = self.predicate_scorer(predicate_repr).squeeze(-1)
+        # [real_num]
+        argument_score = self.argument_scorer(masked_arg_repr).squeeze(-1)
+
+        # # [real_num, 2+seq_len, n_mlp_relation]
+        # init_rela_repr = self.relation_init_mlp(torch.cat(argument_repr.unsqueeze(3).expand(-1,-1,-1,seq_all_len,-1), predicate_repr.reshape((batch_size, 1, 1, seq_all_len, -1)).expand(-1, seq_all_len,seq_all_len,-1,-1), -1)[span_mask])
+
+        # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len, n_mlp_argument+n_mlp_predicate] [batch_size, predicate, head, tail, d]
+        # catted_repr = torch.cat((argument_repr.unsqueeze(3).expand(-1,-1,-1,seq_all_len,-1), predicate_repr.reshape((batch_size, 1, 1, seq_all_len, -1)).expand(-1, seq_all_len,seq_all_len,-1,-1)), -1).permute(0, 3, 1, 2, 4)
+
+        return predicate_score, argument_score, predicate_repr, argument_repr
+
+    def init_rela_repr(self, p_a_mask, pred_repr, arg_repr):
+        """
+        p_a_mask: [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
+        pred_repr: [batch_size, 2+seq_len, d]
+        arg_repr: [batch_size, 2+seq_len, 2+seq_len, d]
+        """
+        # [k, 4]
+        all_idxs = p_a_mask.nonzero()
+        # [k, d]
+        needed_p_repr = pred_repr[all_idxs[:,0], all_idxs[:,1]]
+        # [k, d]
+        needed_a_repr = arg_repr[all_idxs[:,0], all_idxs[:,2], all_idxs[:,3]]
+        # [k, n_mlp_relation]
+        init_repr = self.relation_init_mlp(torch.cat((needed_p_repr, needed_a_repr), -1))
+        return init_repr
+
+
+    def gnn_interaction(self, p_score, a_score, init_rela_repr):
+        raise NotImplemented
+
+    def decode(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask):
+        """
+        p_score:[batch_size, 2+seq_len]
+        a_score:[real_num]
+        catted_repr:[batch_size, 2+seq_len, 2+seq_len, 2+seq_len, n_mlp_argument+n_mlp_predicate]
+        p_mask:[batch_size, 2+seq_len] delete bos, eos and padded words
+        span_mask:[batch_size, 2+seq_len, 2+seq_len] delete bos, eos and padded spans
+        """
+        batch_size, seq_all_len = p_score.shape
+        # [batch_size, 2+seq_len]
+        if_predicate = p_score.ge(0) & p_mask
+        
+        if_argument = torch.zeros_like(span_mask, dtype=torch.long)
+        # [real_num]
+        masked_if_arg = a_score.ge(0).long()
+        # [batch_size, 2+seq_len, 2+seq_len]
+        if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
+        # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
+        p_a_mask = if_predicate.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
+
+        if(p_a_mask.sum()<=0):
+            return (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+
+        # [k, n_mlp_relation] k: true predicate x true span
+        init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
+
+        # TODO:use the gnn rela repr
+
+        # [k, n_labels] n_labels contain [NULL]
+        # rela_score = self.relation_scorer(init_rela_repr)
+        relas = self.relation_scorer(init_rela_repr).argmax(-1)
+
+        # (self.n_labels-1) is the index of [NULL]
+        res = (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+        res = res.masked_scatter(p_a_mask, relas)
+        return res
+
+    def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas):
+        p_loss = self.bce_criterion(p_score[p_mask], gold_p[p_mask].float())
+        argument_loss = self.bce_criterion(a_score, gold_span[span_mask].float())
+        # here currently use gold, may use predicted
+        # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
+        
+        p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
+
+        if(p_a_mask.sum()<=0):
+            return p_loss + argument_loss
+
+        # [k, n_mlp_argument+n_mlp_predicate] k: true predicate x true span
+        init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
+
+        # TODO:use the gnn rela repr
+
+        rela_loss = self.ce_criterion(self.relation_scorer(init_rela_repr), gold_relas[p_a_mask])
+
+        return p_loss + argument_loss + rela_loss
+        
+    
+
+
+
+
+
+
+        

@@ -5,7 +5,7 @@ from .dep import (BiaffineDependencyModel, CRF2oDependencyModel,
                   CRFDependencyModel, VIDependencyModel)
 from .model import Model
 from .sdp import BiaffineSemanticDependencyModel, VISemanticDependencyModel
-from .srl import BiaffineSemanticRoleLabelingModel, VISemanticRoleLabelingModel
+from .srl import BiaffineSemanticRoleLabelingModel, VISemanticRoleLabelingModel, GLISemanticRoleLabelingModel
 
 __all__ = ['Model',
            'BiaffineDependencyModel',
@@ -17,4 +17,5 @@ __all__ = ['Model',
            'BiaffineSemanticDependencyModel',
            'VISemanticDependencyModel',
            'BiaffineSemanticRoleLabelingModel',
-           'VISemanticRoleLabelingModel']
+           'VISemanticRoleLabelingModel',
+           'GLISemanticRoleLabelingModel']

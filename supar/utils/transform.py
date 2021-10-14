@@ -227,6 +227,107 @@ class CoNLL(Transform):
         return labels
 
     @classmethod
+    def get_span_labels(cls, sequence):
+        # add bos and eos
+        labels = [[None]*(len(sequence)+2) for _ in range(len(sequence)+2)]
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge != '0'):
+                        labels[i][int(edge)] = label[2:]
+        return labels
+
+    @classmethod
+    def get_spans(cls, sequence):
+        #return [seq_len, seq_len, seq_len]
+        # seq_len contain root and eos
+        # results = [[[None]*(len(sequence)+2) for i in range(len(sequence)+2)] for j in range(len(sequence)+2)]
+        results = [None] * (len(sequence)+2)
+
+        prd_map = {}  # 1:33, 2:44
+        for i, s in enumerate(sequence, 1):
+            if s != '_':
+                for pair in s.split('|'):
+                    edge, label = pair.split(':')
+                    if(edge == '0' and label == '[prd]'):
+                        prd_map[len(prd_map)+1] = i
+                        break
+        
+        re_prd_map = {}  # 33:1, 44:2
+        for key, value in prd_map.items():
+            re_prd_map[value] = key
+        
+        arc_values = []
+        for i, s in enumerate(sequence, 1):
+            if(s == '_'):
+                arc_value = [[] for j in range(len(prd_map))]
+                arc_values.append(arc_value)
+            else:
+                relas = s.split('|')
+                arc_value = [[] for j in range(len(prd_map))]
+                for rela in relas:
+                    head, rel = rela.split(':')
+                    head_idx = int(head)
+                    if(head_idx in re_prd_map):
+                        arc_value[re_prd_map[head_idx]-1].append(rel)
+                arc_values.append(arc_value)
+        
+        for key, value in prd_map.items():
+            this_prd_arc = [
+                word_arc_lsts[key - 1] for word_arc_lsts in arc_values
+            ]
+            prd_idx = value
+            results[value] = cls.get_span_one_sentence(this_prd_arc, prd_idx)
+        for i in range(len(results)):
+            if(results[i] == None):
+                results[i] = [[None] * (len(sequence)+2) for _ in range(len(sequence)+2)]
+        return results
+
+    @classmethod
+    def get_span_one_sentence(cls, relas, prd_idx):
+        span = [[None] * (len(relas)+2) for _ in range(len(relas)+2)] 
+        i = 0
+        while (i < len(relas)):
+            rel = relas[i]
+            # print(i)
+            # print(relas)
+            if ((i + 1) == prd_idx):
+                # 其实谓词不影响
+                i += 1
+            elif(rel == ['[prd]']):
+                i += 1
+            elif(rel == ['Other']):
+                i += 1
+            elif (len(rel) == 0):
+                i += 1
+            else:
+                s_rel = rel[0]
+                position_tag = s_rel[0]
+                label = s_rel[2:]  # label直接按第一个边界的label
+                if (position_tag in ('B', 'I')):
+                    span_start = i
+                    span_end = -1
+                    i += 1
+                    while (i < len(relas)):
+                        if (len(relas[i]) == 0 or relas[i] == ['Other']):
+                            i += 1
+                            continue
+                        else:
+                            if (relas[i][0][0] == 'B'):
+                                break
+                            else:
+                                span_end = i
+                                # label2 = relas[i][0][2:]  # 以后面那个作为label
+                                i += 1
+                                break
+                    if (span_end != -1):
+                        span[span_start+1][span_end+1] = label
+                    else:
+                        span[span_start+1][span_start+1] = label
+        return span
+
+    @classmethod
     def build_relations(cls, chart):
         sequence = ['_'] * len(chart)
         for i, row in enumerate(chart):

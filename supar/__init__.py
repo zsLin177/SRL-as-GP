@@ -2,7 +2,7 @@
 
 from .parsers import (BiaffineDependencyParser, BiaffineSemanticDependencyParser, CRF2oDependencyParser, CRFConstituencyParser,
                       CRFDependencyParser, Parser, VIConstituencyParser, VIDependencyParser, VISemanticDependencyParser,
-                      BiaffineSemanticRoleLabelingParser, VISemanticRoleLabelingParser)
+                      BiaffineSemanticRoleLabelingParser, VISemanticRoleLabelingParser, GnnLabelInteractionSemanticRoleLabelingParser)
 
 __all__ = ['BiaffineDependencyParser',
            'CRFDependencyParser',
@@ -14,7 +14,8 @@ __all__ = ['BiaffineDependencyParser',
            'VISemanticDependencyParser',
            'Parser',
            'BiaffineSemanticRoleLabelingParser',
-           'VISemanticRoleLabelingParser']
+           'VISemanticRoleLabelingParser',
+           'GnnLabelInteractionSemanticRoleLabelingParser']
 
 __version__ = '1.1.0'
 
@@ -27,7 +28,8 @@ PARSER = {parser.NAME: parser for parser in [BiaffineDependencyParser,
                                              BiaffineSemanticDependencyParser,
                                              VISemanticDependencyParser,
                                              BiaffineSemanticRoleLabelingParser,
-                                             VISemanticRoleLabelingParser]}
+                                             VISemanticRoleLabelingParser,
+                                             GnnLabelInteractionSemanticRoleLabelingParser]}
 
 SRC = 'http://hlt.suda.edu.cn/LA/yzhang/supar'
 

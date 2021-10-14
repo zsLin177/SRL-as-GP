@@ -25,6 +25,7 @@ class MLP(nn.Module):
 
         self.n_in = n_in
         self.n_out = n_out
+        self.if_acti = activation
         self.linear = nn.Linear(n_in, n_out)
         self.activation = nn.LeakyReLU(negative_slope=0.1) if activation else nn.Identity()
         self.dropout = SharedDropout(p=dropout)
@@ -35,6 +36,10 @@ class MLP(nn.Module):
         s = f"n_in={self.n_in}, n_out={self.n_out}"
         if self.dropout.p > 0:
             s += f", dropout={self.dropout.p}"
+        if self.if_acti:
+            s += ', activation=True'
+        else:
+            s += ', activation=False'
 
         return f"{self.__class__.__name__}({s})"
 
