@@ -240,8 +240,8 @@ class Parser(object):
             steps = len(train.loader) * args.epochs // args.update_steps
             # pdb.set_trace()
             self.optimizer = AdamW(
-                [{'params': c.parameters(), 'lr': args.lr * (1 if n == 'encoder' else args.lr_rate)}
-                 for n, c in self.model.named_children()],
+                [{'params': c, 'lr': args.lr * (1 if n.startswith('encoder') else args.lr_rate)}
+                 for n, c in self.model.named_parameters()],
                 args.lr)
             self.scheduler = get_linear_schedule_with_warmup(self.optimizer, int(steps*args.warmup), steps)
 

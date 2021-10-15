@@ -884,9 +884,9 @@ class GLISemanticRoleLabelingModel(Model):
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
                  encoder_dropout=.33,
-                 n_mlp_predicate=100,
-                 n_mlp_argument=100,
-                 n_mlp_relation=100,
+                 n_mlp_predicate=300,
+                 n_mlp_argument=300,
+                 n_mlp_relation=300,
                  repr_mlp_dropout=.25,
                  scorer_mlp_dropout=.2,
                  interpolation=0.1,
@@ -1018,8 +1018,9 @@ class GLISemanticRoleLabelingModel(Model):
         relas = self.relation_scorer(init_rela_repr).argmax(-1)
 
         # (self.n_labels-1) is the index of [NULL]
-        res = (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+        res = (self.n_labels-1) * torch.ones_like(p_a_mask, dtype=torch.long)
         res = res.masked_scatter(p_a_mask, relas)
+        res = res.masked_fill(res.eq(self.n_labels-1), -1)
         return res
 
     def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas):

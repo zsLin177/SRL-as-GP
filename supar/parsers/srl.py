@@ -1208,6 +1208,16 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
         labels_list = [self.LABEL.vocab.itos[t_idx][2:] for t_idx in label_idxs]
         for i in range(len(res_lists)):
             res_lists[i].append(labels_list[i])
+
+        # one predicate one list
+        tmp_dict = {}
+        final_lst = []
+        for tup in res_lists:
+            if(tup[1] in tmp_dict):
+                final_lst[tmp_dict[tup[1]]].append(tup)
+            else:
+                tmp_dict[tup[1]] = len(tmp_dict)
+                final_lst.append([tup])
         return res_lists
 
 
@@ -1332,7 +1342,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             WORD.unk_index,
             'lr':
             5e-5,
-            'epochs': 10, 
+            'epochs': 20, 
             'warmup':
             0.1,
             'interpolation': args.itp,
