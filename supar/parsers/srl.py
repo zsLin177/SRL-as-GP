@@ -1218,7 +1218,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             else:
                 tmp_dict[tup[1]] = len(tmp_dict)
                 final_lst.append([tup])
-        return res_lists
+        return final_lst
 
 
     @classmethod
