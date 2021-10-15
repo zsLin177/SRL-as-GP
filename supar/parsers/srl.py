@@ -711,7 +711,16 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         labels_list = [self.LABEL.vocab.itos[t_idx][2:] for t_idx in label_idxs]
         for i in range(len(res_lists)):
             res_lists[i].append(labels_list[i])
-        return res_lists
+
+        tmp_dict = {}
+        final_lst = []
+        for tup in res_lists:
+            if(tup[1] in tmp_dict):
+                final_lst[tmp_dict[tup[1]]].append(tup)
+            else:
+                tmp_dict[tup[1]] = len(tmp_dict)
+                final_lst.append([tup])
+        return final_lst
 
     def prepare_viterbi(self):
         # [n_labels+2]
