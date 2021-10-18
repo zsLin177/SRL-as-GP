@@ -14,7 +14,7 @@ from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk, eos
 from supar.utils.field import ChartField, Field, SubwordField, SpanSrlFiled
 from supar.utils.logging import get_logger, progress_bar
-from supar.utils.metric import ChartMetric
+from supar.utils.metric import ChartMetric, ArgumentMetric
 from supar.utils.transform import CoNLL
 
 logger = get_logger(__name__)
@@ -1019,7 +1019,8 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
                 self.optimizer.step()
                 self.scheduler.step()
                 self.optimizer.zero_grad()
-
+            
+            self.model.eval()
             preds = self.model.decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
             metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1))
             bar.set_postfix_str(
@@ -1031,15 +1032,15 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
     def _evaluate(self, loader):
         self.model.eval()
 
-        total_loss, metric = 0, ChartMetric()
+        total_loss, metric = 0, ArgumentMetric()
 
         for words, *feats, spans in loader:
             # [batch_size, seq_len+2, seq_len+2, seq_len+2]
             gold_relas = spans.masked_fill(spans.eq(-1), self.args.n_labels-1)
             # [batch_size, seq_len+2]
-            # gold_p = spans.gt(-1).long().sum((2,3)).gt(0).long()
+            gold_p = spans.gt(-1).long().sum((2,3)).gt(0).long()
             # [batch_size, seq_len+2, seq_len+2]
-            # gold_spans = spans.gt(-1).sum(1).gt(0).long()
+            gold_spans = spans.gt(-1).sum(1).gt(0).long()
             word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index) & words.ne(self.args.eos_index)
             p_mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             span_mask = p_mask.unsqueeze(1) & p_mask.unsqueeze(2)
@@ -1048,7 +1049,9 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             # total_loss += loss.item()
 
             preds = self.model.decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
-            metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1))
+            pred_p = preds.gt(-1).long().sum((2,3)).gt(0).long()
+            pred_s = preds.gt(-1).sum(1).gt(0).long()
+            metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1), pred_p.masked_fill(~p_mask, 0), gold_p.masked_fill(~p_mask, 0), pred_s.masked_fill(~span_mask, 0), gold_spans.masked_fill(~span_mask, 0))
         # total_loss /= len(loader)
 
         return metric
@@ -1057,28 +1060,27 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
     def _predict(self, loader):
         self.model.eval()
 
-        for words, *feats, labels, spans in progress_bar(loader):
-            spans = spans.gt(-1).sum(1).gt(0).long()
-            word_mask = words.ne(self.args.pad_index)
-            # mask2 = word_mask.clone()
-            # mask2[:, 0] = 0
-            mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
-            mask = mask.unsqueeze(1) & mask.unsqueeze(2)
-            mask[:, 0] = 0
-            n_mask = mask[:, :, 0]
-            lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            # s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
-            s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, labels, mask, True)
-            # if(not self.args.vtb):
-            #     label_preds = self.model.decode(s_edge,
-            #                                 s_label).masked_fill(~mask, -1)
-            # else:
-            label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+        final_preds = {'labels': [], 'probs': [] if self.args.prob else None}
+        total_loss, metric = 0, ArgumentMetric()
+        for words, *feats, spans in progress_bar(loader):
+            # [batch_size, seq_len+2, seq_len+2, seq_len+2]
+            gold_relas = spans.masked_fill(spans.eq(-1), self.args.n_labels-1)
+            # [batch_size, seq_len+2]
+            gold_p = spans.gt(-1).long().sum((2,3)).gt(0).long()
+            # [batch_size, seq_len+2, seq_len+2]
+            gold_spans = spans.gt(-1).sum(1).gt(0).long()
+            word_mask = words.ne(self.args.pad_index) & words.ne(self.args.bos_index) & words.ne(self.args.eos_index)
+            p_mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
+            lens = p_mask.sum(-1).tolist()
+            span_mask = p_mask.unsqueeze(1) & p_mask.unsqueeze(2)
+            p_score, a_score, predicate_repr, argument_repr = self.model(words, span_mask, feats)
+            # loss = self.model.loss(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_spans, gold_relas)
+            # total_loss += loss.item()
 
-            preds['labels'].extend(chart[1:i, :i].tolist()
-                                   for i, chart in zip(lens, label_preds))
+            preds = self.model.decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
+            pred_p = preds.gt(-1).long().sum((2,3)).gt(0).long()
+            pred_s = preds.gt(-1).sum(1).gt(0).long()
+            metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1), pred_p.masked_fill(~p_mask, 0), gold_p.masked_fill(~p_mask, 0), pred_s.masked_fill(~span_mask, 0), gold_spans.masked_fill(~span_mask, 0))
             # if self.args.prob:
             #     preds['probs'].extend([
             #         prob[1:i, :i].cpu()
@@ -1086,7 +1088,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             #                            s_edge.softmax(-1).unbind())
             #     ])
         # pdb.set_trace()
-        preds['labels'] = [
+        final_preds['labels'] = [
             CoNLL.build_relations(
                 [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
                  for row in chart]) for chart in preds['labels']

@@ -24,7 +24,7 @@ class Metric(object):
 
 class ArgumentMetric(Metric):
     def __init__(self, eps=1e-12):
-        super(ChartMetric, self).__init__()
+        super(Metric, self).__init__()
 
         self.tp = 0.0
         self.utp = 0.0
@@ -41,7 +41,12 @@ class ArgumentMetric(Metric):
 
         self.eps = eps
 
-    def __call__(self, preds, golds):
+    def __call__(self, preds, golds, pred_p, gold_p, pred_span, gold_span):
+        """
+        preds, golds: [batch_size, seq_len, seq_len, seq_len]
+        pred_p, gold_p: [batch_size, seq_len]
+        pred_span, gold_span: [batch_size, seq_len, seq_len]
+        """
         # TODO: add predicate and span metric
         pred_mask = preds.ge(0)
         gold_mask = golds.ge(0)
@@ -50,10 +55,49 @@ class ArgumentMetric(Metric):
         self.gold += gold_mask.sum().item()
         self.tp += (preds.eq(golds) & span_mask).sum().item()
         self.utp += span_mask.sum().item()
+
+        pred_p_mask = pred_p.gt(0)
+        gold_p_mask = gold_p.gt(0)
+        p_mask = pred_p_mask & gold_p_mask
+        self.predicate_pred += pred_p_mask.sum().item()
+        self.predicate_gold += gold_p_mask.sum().item()
+        self.predicate_t += p_mask.sum().item()
+
+        pred_s_mask = pred_span.gt(0)
+        gold_s_mask = gold_span.gt(0)
+        s_mask = pred_s_mask & gold_s_mask
+        self.span_pred += pred_s_mask.sum().item()
+        self.span_gold += gold_s_mask.sum().item()
+        self.span_t += s_mask.sum().item()
+
         return self
 
     def __repr__(self):
-        return f"UP: {self.up:6.2%} UR: {self.ur:6.2%} UF: {self.uf:6.2%} P: {self.p:6.2%} R: {self.r:6.2%} F: {self.f:6.2%}"
+        return f"P_P: {self.p_p:6.2%} P_R: {self.p_r:6.2%} P_F: {self.p_f:6.2%}  S_P: {self.s_p:6.2%} S_R:{self.s_r:6.2%} S_F: {self.s_f:6.2%} UP: {self.up:6.2%} UR: {self.ur:6.2%} UF: {self.uf:6.2%} P: {self.p:6.2%} R: {self.r:6.2%} F: {self.f:6.2%}"
+
+    @property
+    def p_p(self):
+        return self.predicate_t / (self.predicate_pred + self.eps)
+    
+    @property
+    def p_r(self):
+        return self.predicate_t / (self.predicate_gold + self.eps)
+
+    @property
+    def p_f(self):
+        return 2 * self.predicate_t / (self.predicate_pred + self.predicate_gold + self.eps)
+
+    @property
+    def s_p(self):
+        return self.span_t / (self.span_pred + self.eps)
+
+    @property
+    def s_r(self):
+        return self.span_t / (self.span_gold + self.eps)
+
+    @property
+    def s_f(self):
+        return 2 * self.span_t / (self.span_pred + self.span_gold + self.eps)
 
     @property
     def score(self):
