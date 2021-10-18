@@ -861,7 +861,7 @@ class VISrlParser(BiaffineSrlParser):
                 # delta_edge_sum += delta_mask.sum().item()
                 
 
-            preds['labels'].extend(chart[1:i, :i].tolist()
+            preds['labels'].extend(chart[1:i+1, :i+1].tolist()
                                    for i, chart in zip(lens, label_preds))
             if self.args.prob:
                 preds['probs'].extend([

@@ -16,6 +16,8 @@ build
 dist
 *.egg-info
 load_and_parse_forcup*
+bert-*
+roberta-*
 
 # experimental results
 exp
