@@ -2,11 +2,14 @@
 
 import pdb
 from typing import no_type_check_decorator
+from torch import autograd
+from torch._C import dtype
 import torch.nn as nn
 from supar.models.model import Model
 from supar.modules import MLP, Biaffine, Triaffine
 from supar.structs import LBPSemanticDependency, MFVISemanticDependency
 from supar.utils import Config
+from supar.utils.common import MIN
 import torch
 from torch.nn.utils.rnn import pad_sequence
 
@@ -1022,6 +1025,147 @@ class GLISemanticRoleLabelingModel(Model):
         res = res.masked_scatter(p_a_mask, relas)
         res = res.masked_fill(res.eq(self.n_labels-1), -1)
         return res
+
+    @torch.enable_grad()
+    def dp_decode(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask):
+        """
+        p_score:[batch_size, 2+seq_len]
+        a_score:[real_num]
+        catted_repr:[batch_size, 2+seq_len, 2+seq_len, 2+seq_len, n_mlp_argument+n_mlp_predicate]
+        p_mask:[batch_size, 2+seq_len] delete bos, eos and padded words
+        span_mask:[batch_size, 2+seq_len, 2+seq_len] delete bos, eos and padded spans
+        """
+        batch_size, seq_all_len = p_score.shape
+        # [batch_size, seq_all_len, 1]
+        lens = p_mask.sum(-1).unsqueeze(-1).expand(-1, seq_all_len).unsqueeze(-1)
+        # [batch_size, 2+seq_len]
+        if_predicate = p_score.ge(0) & p_mask
+        
+        if_argument = torch.zeros_like(span_mask, dtype=torch.long)
+        # [real_num]
+        masked_if_arg = a_score.ge(0).long()
+        # [batch_size, 2+seq_len, 2+seq_len]
+        if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
+        # [batch_size, 1]
+        
+        if_overlap = self.detect_overlap(if_argument).unsqueeze(-1)
+
+        # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
+        p_a_mask = if_predicate.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
+
+        if(p_a_mask.sum()<=0):
+            return (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+
+        # decide use local or dp
+        # [batch_size, 2+seq_len]
+        local_mask = if_predicate & (~if_overlap)
+        dp_mask = if_predicate & if_overlap
+
+        res = (self.n_labels-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+
+        local_p_a_mask = local_mask.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
+        if(local_p_a_mask.sum()>0):
+            # use local decode
+            # [m, n_mlp_relation]
+            init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
+            # relas: [m]
+            relas = self.relation_scorer(init_rela_repr).argmax(-1)
+            res = res.masked_scatter(local_p_a_mask, relas)
+        
+        dp_p_a_mask = dp_mask.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
+        if(dp_p_a_mask.sum()>0):
+            # [num_prd]
+            needed_len = lens[dp_mask].squeeze(-1)
+            # use dp decode
+            # [n, n_mlp_relation]
+            init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
+
+            # 概率>exp()>直接mlp出来的score
+            # 或许问题还是出在分数的定义上，对于确实是预测出的span的分数应该是多少，以及不是预测出的span的分数 
+
+            # [n, n_labels]
+            score_all_label = self.relation_scorer(init_rela_repr).softmax(-1)
+            # [n]
+            relas = score_all_label.argmax(-1)
+            # [num_prd, 2+seq_len, 2+seq_len]
+            tmp_res = (self.n_labels-1) * score_all_label.new_ones(dp_mask.sum().item(), seq_all_len, seq_all_len, dtype=torch.long)
+            tmp_res = tmp_res.masked_scatter(dp_p_a_mask[dp_mask], relas)
+            
+            # [n]
+            # e_score = score_all_label.max(-1)[0]
+            e_score = 1-score_all_label[:, -1]
+
+            # [num_prd, 2+seq_len, 2+seq_len]
+            e_score_all = 0 * e_score.new_ones(dp_mask.sum().item(), seq_all_len, seq_all_len, requires_grad=True)
+            e_score_all = e_score_all.masked_scatter(dp_p_a_mask[dp_mask], e_score)
+
+            # e_score_all = e_score_all.exp()
+
+            num_prd = e_score_all.shape[0]
+            score = e_score_all.new_zeros(num_prd, seq_all_len)
+            path = -e_score_all.new_ones(num_prd, seq_all_len, dtype=torch.long)
+            # init
+            path[:, 1] = 1
+            score[:, 1] = e_score_all[:, 1, 1]
+            # [2+seq_len, num_prd]
+            score.transpose_(0, 1)
+            path.transpose_(0, 1)
+            # [head, tail, num_prd]
+            e_score_all = e_score_all.permute(1, 2, 0)
+            for i in range(1, seq_all_len):
+                # [i, num_prd]
+                tmp_tensor = score.new_zeros(i, num_prd)
+                tmp_tensor[-1] = e_score_all[1, i]
+                tmp_tensor[:-1] = score[1: i] + e_score_all[2:i+1, i]
+                score[i], path[i] = tmp_tensor.max(0)
+                path[i] = path[i] + 1
+            
+            # backtrack with backward
+            # [num_prd, seq_all_len]
+            score.transpose_(0, 1)
+            z = score[range(num_prd), needed_len].sum()
+            grd, = autograd.grad(z, e_score_all)
+            back_mask = grd.permute(2, 0, 1).long()
+
+            # normal backtrack
+            # back_mask = torch.zeros_like(tmp_res, dtype=torch.long)
+            # path = path.transpose(0, 1).tolist()
+            # for i in range(num_prd):
+            #     j = needed_len[i].item()
+            #     while(j>=1):
+            #         if(path[i][j] == j):
+            #             back_mask[i, 1, j] = 1
+            #             break
+            #         else:
+            #             k = path[i][j]
+            #             back_mask[i, k+1, j] = 1
+            #             j = k
+            
+            tmp_res.masked_fill_(~(back_mask.bool()), self.n_labels-1)
+            res[dp_mask] = tmp_res
+        
+        res = res.masked_fill(res.eq(self.n_labels-1), -1)
+        return res
+
+
+    def detect_overlap(self, if_argument):
+        """
+        if_argument: [batch_size, seq_len+2, seq_len+2] bool
+        return if_overlap: [batch_size] True: exist overlap need dp
+        """
+        batch_size, seq_all, _ = if_argument.shape
+        if_overlap = [False] * batch_size
+        for i in range(batch_size):
+            span_lst = if_argument[i].nonzero().tolist()
+            if(len(span_lst)<=1):
+                continue
+            for j in range(1, len(span_lst)):
+                if(span_lst[j][0]<=span_lst[j-1][1]):
+                    if_overlap[i] = True
+                    break
+        return if_argument.new_tensor(if_overlap)
+
+
 
     def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas):
         p_loss = self.bce_criterion(p_score[p_mask], gold_p[p_mask].float())
