@@ -2,6 +2,7 @@
 
 import os
 from datetime import datetime, timedelta
+import pdb
 import subprocess
 import dill
 import supar
@@ -127,7 +128,7 @@ def produce_column_3(relas, prd_idx):
         rel = relas[i]
         # print(i)
         # print(relas)
-        if ((i + 1) == prd_idx):
+        if ((i + 1) == prd_idx and len(rel)<1):
             # 其实谓词不影响
             column.append('(V*)')
             i += 1

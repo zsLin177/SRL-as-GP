@@ -337,6 +337,33 @@ class CoNLL(Transform):
         return sequence
 
     @classmethod
+    def build_relas_from_spans(cls, chart):
+        seq_len = len(chart)  # the real len of seq, not contain bos, pad, eos
+        sequence = ['_'] * seq_len
+        for idx, p_chart in enumerate(chart, 1):
+            flag = 0  # if it is a predicate
+            for head in range(1, seq_len+1):
+                for tail in range(1, seq_len+1):
+                    if(p_chart[head-1][tail-1] is not None):
+                        label = p_chart[head-1][tail-1]
+                        if(sequence[head-1] == '_'):
+                            sequence[head-1] = str(idx)+':'+'B-'+label
+                        else:
+                            sequence[head-1] += '|'+str(idx)+':'+'B-'+label
+                        if(head != tail):
+                            if(sequence[tail-1] == '_'):
+                                sequence[tail-1] = str(idx)+':'+'I-'+label
+                            else:
+                                sequence[tail-1] += '|'+str(idx)+':'+'I-'+label
+                        flag = 1
+            if(flag == 1):
+                if(sequence[idx-1] == '_'):
+                    sequence[idx-1] = str(0)+':'+'[prd]'
+                else:
+                    sequence[idx-1] += '|'+str(0)+':'+'[prd]'
+        return sequence
+
+    @classmethod
     def toconll(cls, tokens):
         r"""
         Converts a list of tokens to a string in CoNLL-X format.

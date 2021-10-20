@@ -3,6 +3,7 @@
 import os
 
 import pdb
+from re import X
 
 import torch
 import torch.nn as nn
@@ -1048,7 +1049,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             # loss = self.model.loss(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_spans, gold_relas)
             # total_loss += loss.item()
 
-            preds = self.model.decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
+            preds = self.model.dp_decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
             pred_p = preds.gt(-1).long().sum((2,3)).gt(0).long()
             pred_s = preds.gt(-1).sum(1).gt(0).long()
             metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1), pred_p.masked_fill(~p_mask, 0), gold_p.masked_fill(~p_mask, 0), pred_s.masked_fill(~span_mask, 0), gold_spans.masked_fill(~span_mask, 0))
@@ -1060,7 +1061,8 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
     def _predict(self, loader):
         self.model.eval()
 
-        final_preds = {'labels': [], 'probs': [] if self.args.prob else None}
+        final_preds = {'spans': [], 'probs': [] if self.args.prob else None}
+        charts = []
         total_loss, metric = 0, ArgumentMetric()
         for words, *feats, spans in progress_bar(loader):
             # [batch_size, seq_len+2, seq_len+2, seq_len+2]
@@ -1077,24 +1079,32 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             # loss = self.model.loss(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_spans, gold_relas)
             # total_loss += loss.item()
 
-            preds = self.model.decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
+            preds = self.model.dp_decode(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask)
             pred_p = preds.gt(-1).long().sum((2,3)).gt(0).long()
             pred_s = preds.gt(-1).sum(1).gt(0).long()
             metric(preds, gold_relas.masked_fill(gold_relas.eq(self.args.n_labels-1), -1), pred_p.masked_fill(~p_mask, 0), gold_p.masked_fill(~p_mask, 0), pred_s.masked_fill(~span_mask, 0), gold_spans.masked_fill(~span_mask, 0))
+            final_preds['spans'].extend(chart[1:i+1, 1:i+1, 1:i+1].tolist() for i, chart in zip(lens, preds))
             # if self.args.prob:
             #     preds['probs'].extend([
             #         prob[1:i, :i].cpu()
             #         for i, prob in zip(lens,
             #                            s_edge.softmax(-1).unbind())
             #     ])
-        # pdb.set_trace()
-        final_preds['labels'] = [
-            CoNLL.build_relations(
-                [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
-                 for row in chart]) for chart in preds['labels']
+        
+        print(metric)
+        final_preds['spans'] = [
+            CoNLL.build_relas_from_spans(
+                [[[self.LABEL.vocab[i] if i >= 0 else None for i in row] for row in p_chart]
+                 for p_chart in chart]) for chart in final_preds['spans']
         ]
 
-        return preds
+        # final_preds['labels'] = [
+        #     CoNLL.build_relations(
+        #         [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
+        #          for row in chart]) for chart in preds['labels']
+        # ]
+
+        return final_preds
 
     
     @torch.no_grad()
