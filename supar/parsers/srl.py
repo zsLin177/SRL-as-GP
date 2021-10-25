@@ -720,6 +720,16 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             else:
                 tmp_dict[tup[1]] = len(tmp_dict)
                 final_lst.append([tup])
+        
+        for predicate_lst in final_lst:
+            del_rept_dict = {"ARG0":0, "ARG1":0, "ARG2":0, "ARG3":0, "ARG4":0}
+            for i in range(len(predicate_lst)-1, -1, -1):
+                tup = predicate_lst[i]
+                label = tup[-1]
+                if(label in del_rept_dict and del_rept_dict[label] == 0):
+                    del_rept_dict[label] = 1
+                elif(label in del_rept_dict and del_rept_dict[label] == 1):
+                    predicate_lst.pop(i)
         return final_lst
 
     def prepare_viterbi(self):

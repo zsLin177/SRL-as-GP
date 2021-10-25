@@ -20,6 +20,7 @@ load_and_parse_forcup.py
 exp
 results
 bert-*
+roberta-large
 
 # log and config files
 *.log
