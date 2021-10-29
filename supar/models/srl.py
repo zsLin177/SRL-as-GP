@@ -866,6 +866,7 @@ class GLISemanticRoleLabelingModel(Model):
     def __init__(self,
                  n_words,
                  n_labels,
+                 n_gnn_layers=0,
                  n_tags=None,
                  n_chars=None,
                  n_lemmas=None,
@@ -899,6 +900,7 @@ class GLISemanticRoleLabelingModel(Model):
                  **kwargs):
         super().__init__(**Config().update(locals()))
         self.n_labels = n_labels
+        self.n_gnn_layers = n_gnn_layers
         self.n_mlp_predicate = n_mlp_predicate
         self.n_mlp_argument = n_mlp_argument
         self.n_mlp_relation = n_mlp_relation
@@ -931,6 +933,11 @@ class GLISemanticRoleLabelingModel(Model):
         self.relation_scorer = MLP(n_in=n_mlp_relation,
                                     n_out=n_labels,
                                     activation=False)
+        if(n_gnn_layers>0):
+            self.q_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
+            self.k_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
+            self.v_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
+
         self.bce_criterion = nn.BCEWithLogitsLoss()
         self.ce_criterion = nn.CrossEntropyLoss()
 
@@ -985,8 +992,106 @@ class GLISemanticRoleLabelingModel(Model):
         return init_repr
 
 
-    def gnn_interaction(self, p_score, a_score, init_rela_repr):
-        raise NotImplemented
+    def filter_p_a_mask(self, p_a_mask, pad_p_mask, pad_span_mask, max_num=1000):
+        sum_r_num = p_a_mask.sum()
+        if(sum_r_num > max_num):
+            all_r_idx = p_a_mask.nonzero()
+            rate = 1000/sum_r_num.item()
+            filt_mask = (torch.rand(all_r_idx.shape[0], device=p_a_mask.device) < rate)
+            filt_idx = all_r_idx[filt_mask]
+            p_a_mask[:] = 0
+            b_idx, p_idx, h_idx, t_idx = filt_idx[:, 0], filt_idx[:, 1], filt_idx[:, 2], filt_idx[:, 3]
+            p_a_mask[b_idx, p_idx, h_idx, t_idx] = 1
+            p_a_mask = p_a_mask.bool()
+        p_mask = p_a_mask.sum((2,3)).gt(0) & pad_p_mask
+        span_mask = p_a_mask.sum(1).gt(0) & pad_span_mask
+        return p_a_mask, p_mask, span_mask
+
+    def gnn_interaction(self, pred_mask, span_mask, p_a_mask, init_rela_repr):
+        """
+        predicted predicate and span mask:
+            pred_mask:[batch_size, seq_len+2]
+            span_mask:[batch_size, seq_len+2, seq_len+2]
+            p_a_mask:[batch_size, seq_len+2, seq_len+2, seq_len+2]
+        init_rela_repr:[k, n_mlp_relation]
+        """
+        batch_size, seq_len_all = pred_mask.shape
+        d = init_rela_repr.shape[-1]
+        # [batch_size,]
+        real_r_num = p_a_mask.sum((1,2,3)).tolist()
+        max_rela_num = max(real_r_num)
+        # [batch_size,]
+        real_span_num = span_mask.sum((1,2))-1 + pred_mask.sum(-1)-1
+        max_span_num = max(real_span_num)
+
+        # [batch_size, max_rela_num]
+        mask = pred_mask.new_zeros(batch_size, max_rela_num).bool()
+        for i in range(batch_size):
+            mask[i, :real_r_num[i]] = 1
+        
+        # filter out neighbourhoods
+        # [k, 4]
+        rela_nums = p_a_mask.sum().item()
+        k_rela_idxs = p_a_mask.nonzero()
+        b_idx, p_idx, h_idx, t_idx = k_rela_idxs[:,0], k_rela_idxs[:,1], k_rela_idxs[:, 2], k_rela_idxs[:, 3]
+
+        # [k, batch_size, seq_all, seq_all, seq_all]
+        pdb.set_trace()
+        neb_mask = k_rela_idxs.new_zeros(rela_nums, batch_size, seq_len_all, seq_len_all, seq_len_all).bool()
+        neb_mask[range(rela_nums), b_idx, p_idx] = 1
+        neb_mask[range(rela_nums), b_idx, :, h_idx, t_idx] = 1
+        neb_mask[range(rela_nums), b_idx, p_idx, h_idx, t_idx] = 0
+        neb_mask = neb_mask & p_a_mask
+        # sum m neighbourhoods
+        # [m, 5]
+        m_neb_idxs = neb_mask.nonzero()
+        # [m,]
+        m_neb_k_idx = m_neb_idxs[:, 0]
+        # [m, 4]
+        m_p_a_idxs = m_neb_idxs[:, 1:]
+        values, indices = torch.topk(((k_rela_idxs.t() == m_p_a_idxs.unsqueeze(-1)).all(dim=1)).long(), 1, 1)
+        # [m]
+        indices = indices[values!=0]
+        simple_neb_mask = neb_mask.new_zeros(rela_nums, rela_nums).bool()
+        # [k, k]
+        simple_neb_mask[m_neb_k_idx, indices] = 1
+        # can check simple_mask triu
+
+        # [k,]
+        neb_nums = simple_neb_mask.sum(-1)
+        back_mask = mask.new_zeros(rela_nums, max_span_num).bool()
+        for i in range(neb_nums.shape[0]):
+            back_mask[i, :neb_nums[i]] = 1
+
+
+        q = pred_mask.new_zeros(batch_size, max_rela_num, d, dtype=torch.float)
+        needed_k_context = MIN * init_rela_repr.new_ones(rela_nums, max_span_num, d)
+        k = MIN * needed_k_context.new_ones(batch_size, max_rela_num, max_span_num, d)
+        needed_v_context = init_rela_repr.new_zeros(rela_nums, max_span_num, d)
+        v = needed_v_context.new_zeros(batch_size, max_rela_num, max_span_num, d)
+        for i in range(self.n_gnn_layers):
+            # [k, d]
+            needed_q = self.q_mlp(init_rela_repr)
+            needed_k = self.k_mlp(init_rela_repr)
+            needed_v = self.v_mlp(init_rela_repr)
+
+            
+            q[mask] = needed_q
+
+            m_neb_k_repr = needed_k[indices]
+            needed_k_context[back_mask] = m_neb_k_repr
+            k[mask] = needed_k_context
+            k = k.softmax(2)
+
+            m_neb_v_repr = needed_v[indices]
+            needed_v_context[back_mask] = m_neb_v_repr
+            v[mask] = needed_v_context
+
+            c_lambda = torch.einsum('bijk,bijv->bikv', k, v)
+            c_output = torch.einsum('bikv,bik->biv', c_lambda, q)
+            init_rela_repr = c_output[mask]
+
+        return init_rela_repr
 
     def decode(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask):
         """
@@ -1011,10 +1116,15 @@ class GLISemanticRoleLabelingModel(Model):
         if(p_a_mask.sum()<=0):
             return (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
 
-        # [k, n_mlp_relation] k: true predicate x true span
-        init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
-
         # TODO:use the gnn rela repr
+        if(self.n_gnn_layers > 0):
+            p_a_mask, if_predicate, if_argument = self.filter_p_a_mask(p_a_mask, p_mask, span_mask)
+            # [k, n_mlp_relation] k: true predicate x true span
+            init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
+            init_rela_repr = self.gnn_interaction(if_predicate, if_argument, p_a_mask, init_rela_repr)
+        else:
+            init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
+
 
         # [k, n_labels] n_labels contain [NULL]
         # rela_score = self.relation_scorer(init_rela_repr)
@@ -1031,7 +1141,8 @@ class GLISemanticRoleLabelingModel(Model):
         """
         p_score:[batch_size, 2+seq_len]
         a_score:[real_num]
-        catted_repr:[batch_size, 2+seq_len, 2+seq_len, 2+seq_len, n_mlp_argument+n_mlp_predicate]
+        predicate_repr: [batch_size, 2+seq_len, n_mlp_predicate]
+        argument_repr: [batch_size, 2+seq_len, 2+seq_len, n_mlp_argument]
         p_mask:[batch_size, 2+seq_len] delete bos, eos and padded words
         span_mask:[batch_size, 2+seq_len, 2+seq_len] delete bos, eos and padded spans
         """
@@ -1066,8 +1177,12 @@ class GLISemanticRoleLabelingModel(Model):
         local_p_a_mask = local_mask.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
         if(local_p_a_mask.sum()>0):
             # use local decode
-            # [m, n_mlp_relation]
-            init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
+            if(self.n_gnn_layers>0):
+                local_p_a_mask, local_mask, if_argument = self.filter_p_a_mask(local_p_a_mask, p_mask, span_mask)
+                init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
+                init_rela_repr = self.gnn_interaction(local_mask, if_argument, local_p_a_mask, init_rela_repr)
+            else:
+                init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
             # relas: [m]
             relas = self.relation_scorer(init_rela_repr).argmax(-1)
             res = res.masked_scatter(local_p_a_mask, relas)
@@ -1077,8 +1192,14 @@ class GLISemanticRoleLabelingModel(Model):
             # [num_prd]
             needed_len = lens[dp_mask].squeeze(-1)
             # use dp decode
-            # [n, n_mlp_relation]
-            init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
+        
+            if(self.n_gnn_layers>0):
+                dp_p_a_mask, dp_mask, if_argument = self.filter_p_a_mask(dp_p_a_mask, p_mask, span_mask)
+                # [n, n_mlp_relation]
+                init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
+                init_rela_repr = self.gnn_interaction(dp_mask, if_argument, dp_p_a_mask, init_rela_repr)
+            else:
+                init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
 
             # 概率>exp()>直接mlp出来的score
             # 或许问题还是出在分数的定义上，对于确实是预测出的span的分数应该是多少，以及不是预测出的span的分数 
@@ -1167,22 +1288,35 @@ class GLISemanticRoleLabelingModel(Model):
 
 
 
-    def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas):
+    def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas, flag=0):
         p_loss = self.bce_criterion(p_score[p_mask], gold_p[p_mask].float())
         argument_loss = self.bce_criterion(a_score, gold_span[span_mask].float())
         # here currently use gold, may use predicted
         # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
         
-        p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
+        if(flag):
+            p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
+        else:
+            # use predicted
+            pred_p = p_score.ge(0) & p_mask
+            pred_a = torch.zeros_like(span_mask, dtype=torch.long)
+            # [real_num]
+            masked_if_arg = a_score.ge(0).long()
+            # [batch_size, 2+seq_len, 2+seq_len]
+            pred_a = pred_a.masked_scatter(span_mask, masked_if_arg).bool()
+            p_a_mask = pred_p.unsqueeze(-1).unsqueeze(-1) & pred_a.unsqueeze(1)
+
 
         if(p_a_mask.sum()<=0):
             return p_loss + argument_loss
 
-        # [k, n_mlp_argument+n_mlp_predicate] k: true predicate x true span
-        init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
-
-        # TODO:use the gnn rela repr
-
+        if(self.n_gnn_layers > 0):
+            p_a_mask, pred_p, pred_a = self.filter_p_a_mask(p_a_mask, p_mask, span_mask)
+            # [k, n_mlp_relation] k: true predicate x true span
+            init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
+            init_rela_repr = self.gnn_interaction(pred_p, pred_a, p_a_mask, init_rela_repr)
+        else:
+            init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
         rela_loss = self.ce_criterion(self.relation_scorer(init_rela_repr), gold_relas[p_a_mask])
 
         return p_loss + argument_loss + rela_loss

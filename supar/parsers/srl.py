@@ -996,7 +996,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
 
         return super().predict(**Config().update(locals()))
 
-    def _train(self, loader):
+    def _train(self, loader, flag=0):
         self.model.train()
 
         bar, metric = progress_bar(loader), ChartMetric()
@@ -1012,7 +1012,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             p_mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             span_mask = p_mask.unsqueeze(1) & p_mask.unsqueeze(2)
             p_score, a_score, predicate_repr, argument_repr = self.model(words, span_mask, feats)
-            loss = self.model.loss(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_spans, gold_relas)
+            loss = self.model.loss(p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_spans, gold_relas, flag)
             loss = loss / self.args.update_steps
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), self.args.clip)
@@ -1358,7 +1358,8 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             'warmup':
             0.1,
             'interpolation': args.itp,
-            'split': args.split
+            'split': args.split,
+            'n_gnn_layers':args.n_gnn
         })
         logger.info(f"{transform}")
 

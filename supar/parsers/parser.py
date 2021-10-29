@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
+from logging import warn
 import os
+import math
 from datetime import datetime, timedelta
 import pdb
 import subprocess
@@ -251,12 +253,17 @@ class Parser(object):
 
         elapsed = timedelta()
         best_e, best_metric = 1, Metric()
-
+        warm_up_epochs = math.ceil(args.epochs * args.warmup)
         for epoch in range(1, args.epochs + 1):
             start = datetime.now()
 
+            if(epoch<=warm_up_epochs):
+                flag = 1
+            else:
+                flag = 0
+
             logger.info(f"Epoch {epoch} / {args.epochs}:")
-            self._train(train.loader)
+            self._train(train.loader, flag)
             dev_metric = self._evaluate(dev.loader)
             logger.info(f"- {dev_metric}")
             test_metric = self._evaluate(test.loader)
