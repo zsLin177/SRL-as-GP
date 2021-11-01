@@ -990,14 +990,23 @@ class GLISemanticRoleLabelingModel(Model):
         # [k, n_mlp_relation]
         init_repr = self.relation_init_mlp(torch.cat((needed_p_repr, needed_a_repr), -1))
         return init_repr
-
-
-    def filter_p_a_mask(self, p_a_mask, pad_p_mask, pad_span_mask, max_num=1000):
-        sum_r_num = p_a_mask.sum()
+    
+    def filter_p_a_mask(self, p_a_mask, pad_p_mask, pad_span_mask):
+        # pdb.set_trace()
+        max_num = int(p_a_mask.shape[0] * p_a_mask.shape[1] * 2.5)
+        # max_num = 10000
+        sum_r_num = p_a_mask.sum().item()
+        real_token_num = pad_p_mask.sum().item()
+        paded_token_num = p_a_mask.shape[0] * p_a_mask.shape[1]
+        s = f" sum_r_num: {sum_r_num:6} real_tok: {real_token_num:6} paded_tok: {paded_token_num:6} max_num: {max_num:6}"
+        # print(s)
         if(sum_r_num > max_num):
             all_r_idx = p_a_mask.nonzero()
-            rate = 1000/sum_r_num.item()
-            filt_mask = (torch.rand(all_r_idx.shape[0], device=p_a_mask.device) < rate)
+            # rate = max_num/sum_r_num
+            # filt_mask = (torch.rand(all_r_idx.shape[0], device=p_a_mask.device) < rate)
+            shuffle = torch.arange(1, sum_r_num+1, device=all_r_idx.device)
+            shuffle = shuffle[torch.randperm(shuffle.size()[0])]
+            filt_mask = shuffle.le(max_num)
             filt_idx = all_r_idx[filt_mask]
             p_a_mask[:] = 0
             b_idx, p_idx, h_idx, t_idx = filt_idx[:, 0], filt_idx[:, 1], filt_idx[:, 2], filt_idx[:, 3]
@@ -1033,29 +1042,19 @@ class GLISemanticRoleLabelingModel(Model):
         # [k, 4]
         rela_nums = p_a_mask.sum().item()
         k_rela_idxs = p_a_mask.nonzero()
-        b_idx, p_idx, h_idx, t_idx = k_rela_idxs[:,0], k_rela_idxs[:,1], k_rela_idxs[:, 2], k_rela_idxs[:, 3]
 
-        # [k, batch_size, seq_all, seq_all, seq_all]
-        pdb.set_trace()
-        neb_mask = k_rela_idxs.new_zeros(rela_nums, batch_size, seq_len_all, seq_len_all, seq_len_all).bool()
-        neb_mask[range(rela_nums), b_idx, p_idx] = 1
-        neb_mask[range(rela_nums), b_idx, :, h_idx, t_idx] = 1
-        neb_mask[range(rela_nums), b_idx, p_idx, h_idx, t_idx] = 0
-        neb_mask = neb_mask & p_a_mask
-        # sum m neighbourhoods
-        # [m, 5]
-        m_neb_idxs = neb_mask.nonzero()
-        # [m,]
-        m_neb_k_idx = m_neb_idxs[:, 0]
-        # [m, 4]
-        m_p_a_idxs = m_neb_idxs[:, 1:]
-        values, indices = torch.topk(((k_rela_idxs.t() == m_p_a_idxs.unsqueeze(-1)).all(dim=1)).long(), 1, 1)
-        # [m]
-        indices = indices[values!=0]
-        simple_neb_mask = neb_mask.new_zeros(rela_nums, rela_nums).bool()
-        # [k, k]
-        simple_neb_mask[m_neb_k_idx, indices] = 1
-        # can check simple_mask triu
+        b_id_mask = k_rela_idxs[:, 0].unsqueeze(-1) == k_rela_idxs[:, 0].unsqueeze(0)
+        p_id_mask = k_rela_idxs[:, 1].unsqueeze(-1) == k_rela_idxs[:, 1].unsqueeze(0)
+        h_id_mask = k_rela_idxs[:, 2].unsqueeze(-1) == k_rela_idxs[:, 2].unsqueeze(0)
+        t_id_mask = k_rela_idxs[:, 3].unsqueeze(-1) == k_rela_idxs[:, 3].unsqueeze(0)
+        span_id_mask = h_id_mask & t_id_mask
+        neb_mask_1 = span_id_mask & (~p_id_mask) & b_id_mask
+        neb_mask_2 = p_id_mask & (~span_id_mask) & b_id_mask
+        simple_neb_mask = neb_mask_1 + neb_mask_2
+        indices = simple_neb_mask.nonzero()[:,1]
+
+        if(simple_neb_mask.sum() <=0):
+            return init_rela_repr
 
         # [k,]
         neb_nums = simple_neb_mask.sum(-1)
@@ -1063,33 +1062,39 @@ class GLISemanticRoleLabelingModel(Model):
         for i in range(neb_nums.shape[0]):
             back_mask[i, :neb_nums[i]] = 1
 
-
-        q = pred_mask.new_zeros(batch_size, max_rela_num, d, dtype=torch.float)
-        needed_k_context = MIN * init_rela_repr.new_ones(rela_nums, max_span_num, d)
-        k = MIN * needed_k_context.new_ones(batch_size, max_rela_num, max_span_num, d)
-        needed_v_context = init_rela_repr.new_zeros(rela_nums, max_span_num, d)
-        v = needed_v_context.new_zeros(batch_size, max_rela_num, max_span_num, d)
         for i in range(self.n_gnn_layers):
+            
+            # q = pred_mask.new_zeros(batch_size, max_rela_num, d, dtype=torch.float)
+            needed_k_context = MIN * init_rela_repr.new_ones(rela_nums, max_span_num, d)
+            # k = MIN * needed_k_context.new_ones(batch_size, max_rela_num, max_span_num, d)
+            needed_v_context = init_rela_repr.new_zeros(rela_nums, max_span_num, d)
+            # v = needed_v_context.new_zeros(batch_size, max_rela_num, max_span_num, d)
+
             # [k, d]
             needed_q = self.q_mlp(init_rela_repr)
             needed_k = self.k_mlp(init_rela_repr)
             needed_v = self.v_mlp(init_rela_repr)
 
             
-            q[mask] = needed_q
+            # q[mask] = needed_q
 
             m_neb_k_repr = needed_k[indices]
             needed_k_context[back_mask] = m_neb_k_repr
-            k[mask] = needed_k_context
-            k = k.softmax(2)
+            # k[mask] = needed_k_context
+            # k = k.softmax(2)
+            needed_k_context = needed_k_context.softmax(1)
 
             m_neb_v_repr = needed_v[indices]
             needed_v_context[back_mask] = m_neb_v_repr
-            v[mask] = needed_v_context
+            # v[mask] = needed_v_context
 
-            c_lambda = torch.einsum('bijk,bijv->bikv', k, v)
-            c_output = torch.einsum('bikv,bik->biv', c_lambda, q)
-            init_rela_repr = c_output[mask]
+            # c_lambda = torch.einsum('bijk,bijv->bikv', k, v)
+            # c_output = torch.einsum('bikv,bik->biv', c_lambda, q)
+            # init_rela_repr = c_output[mask]
+
+            c_lambda = torch.einsum('bik,biv->bkv', needed_k_context, needed_v_context)
+            init_rela_repr = torch.einsum('bk,bkv->bv', needed_q, c_lambda)
+
 
         return init_rela_repr
 
@@ -1159,13 +1164,18 @@ class GLISemanticRoleLabelingModel(Model):
         if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
         # [batch_size, 1]
         
-        if_overlap = self.detect_overlap(if_argument).unsqueeze(-1)
 
         # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
         p_a_mask = if_predicate.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
 
         if(p_a_mask.sum()<=0):
             return (-1) * torch.ones_like(p_a_mask, dtype=torch.long)
+
+        if(self.n_gnn_layers > 0):
+            p_a_mask, if_predicate, if_argument = self.filter_p_a_mask(p_a_mask, p_mask, span_mask)
+            if_overlap = self.detect_overlap(if_argument).unsqueeze(-1)
+        else:
+            if_overlap = self.detect_overlap(if_argument).unsqueeze(-1)
 
         # decide use local or dp
         # [batch_size, 2+seq_len]
@@ -1178,7 +1188,6 @@ class GLISemanticRoleLabelingModel(Model):
         if(local_p_a_mask.sum()>0):
             # use local decode
             if(self.n_gnn_layers>0):
-                local_p_a_mask, local_mask, if_argument = self.filter_p_a_mask(local_p_a_mask, p_mask, span_mask)
                 init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
                 init_rela_repr = self.gnn_interaction(local_mask, if_argument, local_p_a_mask, init_rela_repr)
             else:
@@ -1194,7 +1203,6 @@ class GLISemanticRoleLabelingModel(Model):
             # use dp decode
         
             if(self.n_gnn_layers>0):
-                dp_p_a_mask, dp_mask, if_argument = self.filter_p_a_mask(dp_p_a_mask, p_mask, span_mask)
                 # [n, n_mlp_relation]
                 init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
                 init_rela_repr = self.gnn_interaction(dp_mask, if_argument, dp_p_a_mask, init_rela_repr)
@@ -1297,6 +1305,7 @@ class GLISemanticRoleLabelingModel(Model):
         if(flag):
             p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
         else:
+
             # use predicted
             pred_p = p_score.ge(0) & p_mask
             pred_a = torch.zeros_like(span_mask, dtype=torch.long)

@@ -1002,6 +1002,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
         bar, metric = progress_bar(loader), ChartMetric()
 
         for i, (words, *feats, spans) in enumerate(bar, 1):
+            
             # [batch_size, seq_len+2, seq_len+2, seq_len+2]
             gold_relas = spans.masked_fill(spans.eq(-1), self.args.n_labels-1)
             # [batch_size, seq_len+2]
