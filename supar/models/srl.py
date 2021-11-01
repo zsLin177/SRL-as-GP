@@ -992,7 +992,6 @@ class GLISemanticRoleLabelingModel(Model):
         return init_repr
     
     def filter_p_a_mask(self, p_a_mask, pad_p_mask, pad_span_mask):
-        # pdb.set_trace()
         max_num = int(p_a_mask.shape[0] * p_a_mask.shape[1] * 2.5)
         # max_num = 10000
         sum_r_num = p_a_mask.sum().item()
@@ -1026,19 +1025,9 @@ class GLISemanticRoleLabelingModel(Model):
         """
         batch_size, seq_len_all = pred_mask.shape
         d = init_rela_repr.shape[-1]
-        # [batch_size,]
-        real_r_num = p_a_mask.sum((1,2,3)).tolist()
-        max_rela_num = max(real_r_num)
-        # [batch_size,]
         real_span_num = span_mask.sum((1,2))-1 + pred_mask.sum(-1)-1
         max_span_num = max(real_span_num)
 
-        # [batch_size, max_rela_num]
-        mask = pred_mask.new_zeros(batch_size, max_rela_num).bool()
-        for i in range(batch_size):
-            mask[i, :real_r_num[i]] = 1
-        
-        # filter out neighbourhoods
         # [k, 4]
         rela_nums = p_a_mask.sum().item()
         k_rela_idxs = p_a_mask.nonzero()
@@ -1058,9 +1047,10 @@ class GLISemanticRoleLabelingModel(Model):
 
         # [k,]
         neb_nums = simple_neb_mask.sum(-1)
-        back_mask = mask.new_zeros(rela_nums, max_span_num).bool()
+        back_mask = simple_neb_mask.new_zeros(rela_nums, max_span_num).bool()
         for i in range(neb_nums.shape[0]):
             back_mask[i, :neb_nums[i]] = 1
+        # pdb.set_trace()
 
         for i in range(self.n_gnn_layers):
             
@@ -1075,22 +1065,12 @@ class GLISemanticRoleLabelingModel(Model):
             needed_k = self.k_mlp(init_rela_repr)
             needed_v = self.v_mlp(init_rela_repr)
 
-            
-            # q[mask] = needed_q
-
             m_neb_k_repr = needed_k[indices]
             needed_k_context[back_mask] = m_neb_k_repr
-            # k[mask] = needed_k_context
-            # k = k.softmax(2)
             needed_k_context = needed_k_context.softmax(1)
 
             m_neb_v_repr = needed_v[indices]
             needed_v_context[back_mask] = m_neb_v_repr
-            # v[mask] = needed_v_context
-
-            # c_lambda = torch.einsum('bijk,bijv->bikv', k, v)
-            # c_output = torch.einsum('bikv,bik->biv', c_lambda, q)
-            # init_rela_repr = c_output[mask]
 
             c_lambda = torch.einsum('bik,biv->bkv', needed_k_context, needed_v_context)
             init_rela_repr = torch.einsum('bk,bkv->bv', needed_q, c_lambda)

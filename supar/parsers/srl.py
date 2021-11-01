@@ -1355,7 +1355,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             WORD.unk_index,
             'lr':
             5e-5,
-            'epochs': 20, 
+            'epochs': 30, 
             'warmup':
             0.1,
             'interpolation': args.itp,
