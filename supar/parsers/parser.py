@@ -115,7 +115,6 @@ def change2(source_file, tgt_file, task):
                 f.write(' '.join(line_lst) + '\n')
             f.write('\n')
 
-
 def change(source_file, tgt_file, task):
     """
     for bii

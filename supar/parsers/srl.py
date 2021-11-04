@@ -4,7 +4,9 @@ import pdb
 import subprocess
 import torch
 import torch.nn as nn
+from torch.nn import parameter
 from torch.serialization import load
+from supar import models
 from supar.models import (BiaffineSrlModel,
                           VISrlModel)
 from supar.parsers.parser import Parser
@@ -212,7 +214,7 @@ class BiaffineSrlParser(Parser):
         preds = {}
         charts, probs = [], []
         spans_lst = []
-
+        print("Total number of paramerters in model is {} M".format(sum(x.numel() for x in self.model.parameters())/1e6))
         strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi()
         # strans, trans = self.prepare_viterbi2()
         if(torch.cuda.is_available()):
@@ -804,7 +806,7 @@ class VISrlParser(BiaffineSrlParser):
     def _predict(self, loader):
 
         self.model.eval()
-
+        print("Total number of paramerters in model is {} M".format(sum(x.numel() for x in self.model.parameters())/1e6))
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
 
         pred_sum = 0
