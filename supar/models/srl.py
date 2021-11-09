@@ -6,7 +6,7 @@ from torch import autograd
 from torch._C import dtype
 import torch.nn as nn
 from supar.models.model import Model
-from supar.modules import MLP, Biaffine, Triaffine
+from supar.modules import MLP, Biaffine, Triaffine, SimpleBiaffine
 from supar.structs import LBPSemanticDependency, MFVISemanticDependency
 from supar.utils import Config
 from supar.utils.common import MIN
@@ -866,6 +866,7 @@ class GLISemanticRoleLabelingModel(Model):
     def __init__(self,
                  n_words,
                  n_labels,
+                 gnn=None,
                  n_gnn_layers=0,
                  n_tags=None,
                  n_chars=None,
@@ -900,6 +901,7 @@ class GLISemanticRoleLabelingModel(Model):
                  **kwargs):
         super().__init__(**Config().update(locals()))
         self.n_labels = n_labels
+        self.gnn = gnn
         self.n_gnn_layers = n_gnn_layers
         self.n_mlp_predicate = n_mlp_predicate
         self.n_mlp_argument = n_mlp_argument
@@ -933,10 +935,24 @@ class GLISemanticRoleLabelingModel(Model):
         self.relation_scorer = MLP(n_in=n_mlp_relation,
                                     n_out=n_labels,
                                     activation=False)
-        if(n_gnn_layers>0):
+        if(gnn == 'lambda'):
             self.q_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
             self.k_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
             self.v_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
+        elif(gnn == 'gan'):
+            # now every layer use the same parameter
+            self.att_W = nn.Parameter(torch.empty(n_mlp_relation, n_mlp_relation))
+            self.att_B = nn.Parameter(torch.empty(n_mlp_relation, n_mlp_relation))
+            nn.init.normal_(self.att_W)
+            nn.init.normal_(self.att_B)
+            # now use just one Biaffine
+            self.bia_att = SimpleBiaffine(n_in=n_mlp_relation)
+            # self.same_prd_att = Biaffine(n_in=n_mlp_relation)
+            # self.diff_prd_att = Biaffine(n_in=n_mlp_relation)
+
+            # use leakyrelu rate0.1
+            self.activate = nn.LeakyReLU(0.1)
+
 
         self.bce_criterion = nn.BCEWithLogitsLoss()
         self.ce_criterion = nn.CrossEntropyLoss()
@@ -1015,7 +1031,7 @@ class GLISemanticRoleLabelingModel(Model):
         span_mask = p_a_mask.sum(1).gt(0) & pad_span_mask
         return p_a_mask, p_mask, span_mask
 
-    def gnn_interaction(self, pred_mask, span_mask, p_a_mask, init_rela_repr):
+    def lambda_inter(self, pred_mask, span_mask, p_a_mask, init_rela_repr):
         """
         predicted predicate and span mask:
             pred_mask:[batch_size, seq_len+2]
@@ -1074,9 +1090,57 @@ class GLISemanticRoleLabelingModel(Model):
 
             c_lambda = torch.einsum('bik,biv->bkv', needed_k_context, needed_v_context)
             init_rela_repr = torch.einsum('bk,bkv->bv', needed_q, c_lambda)
-
-
         return init_rela_repr
+
+    def gan_inter(self, pred_mask, span_mask, p_a_mask, init_rela_repr):
+        """
+        predicted predicate and span mask:
+            pred_mask:[batch_size, seq_len+2]
+            span_mask:[batch_size, seq_len+2, seq_len+2]
+            p_a_mask:[batch_size, seq_len+2, seq_len+2, seq_len+2]
+        init_rela_repr:[k, n_mlp_relation]
+        """
+        d = init_rela_repr.shape[-1]
+        real_span_num = span_mask.sum((1,2))-1 + pred_mask.sum(-1)-1
+        max_span_num = max(real_span_num)
+
+        # [k, 4]
+        rela_nums = p_a_mask.sum().item()
+        k_rela_idxs = p_a_mask.nonzero()
+
+        b_id_mask = k_rela_idxs[:, 0].unsqueeze(-1) == k_rela_idxs[:, 0].unsqueeze(0)
+        p_id_mask = k_rela_idxs[:, 1].unsqueeze(-1) == k_rela_idxs[:, 1].unsqueeze(0)
+        h_id_mask = k_rela_idxs[:, 2].unsqueeze(-1) == k_rela_idxs[:, 2].unsqueeze(0)
+        t_id_mask = k_rela_idxs[:, 3].unsqueeze(-1) == k_rela_idxs[:, 3].unsqueeze(0)
+        span_id_mask = h_id_mask & t_id_mask
+        neb_mask_1 = span_id_mask & (~p_id_mask) & b_id_mask
+        neb_mask_2 = p_id_mask & (~span_id_mask) & b_id_mask
+        simple_neb_mask = neb_mask_1 + neb_mask_2
+        indices = simple_neb_mask.nonzero()[:,1]
+
+        if(simple_neb_mask.sum() <=0):
+            return init_rela_repr
+
+        # [k,]
+        neb_nums = simple_neb_mask.sum(-1)
+        back_mask = simple_neb_mask.new_zeros(rela_nums, max_span_num).bool()
+        for i in range(neb_nums.shape[0]):
+            back_mask[i, :neb_nums[i]] = 1
+        for i in range(self.n_gnn_layers):
+            neb = init_rela_repr.new_zeros(rela_nums, max_span_num, d)
+            neb[back_mask] = init_rela_repr[indices]
+            # [rela_nums, max_span_num]
+            att = self.bia_att(init_rela_repr, neb)
+            att = att.masked_fill(~back_mask, MIN)
+            soft_att = att.softmax(-1)
+            # [rela_nums, d]
+            neb_info = (soft_att.unsqueeze(-1) * neb).sum(1)
+            neb_info = torch.einsum('dd,db->db', self.att_W, neb_info.transpose(0, 1)).transpose(0, 1)
+            # [rela_nums, d]
+            self_info = torch.einsum('dd,db->db', self.att_B, init_rela_repr.transpose(0, 1)).transpose(0, 1)
+            init_rela_repr = self.activate(neb_info+self_info)
+        return init_rela_repr
+
 
     def decode(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask):
         """
@@ -1106,7 +1170,12 @@ class GLISemanticRoleLabelingModel(Model):
             p_a_mask, if_predicate, if_argument = self.filter_p_a_mask(p_a_mask, p_mask, span_mask)
             # [k, n_mlp_relation] k: true predicate x true span
             init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
-            init_rela_repr = self.gnn_interaction(if_predicate, if_argument, p_a_mask, init_rela_repr)
+            if(self.gnn == 'lambda'):
+                init_rela_repr = self.lambda_inter(if_predicate, if_argument, p_a_mask, init_rela_repr)
+            elif(self.gnn == 'gan'):
+                init_rela_repr = self.gan_inter(if_predicate, if_argument, p_a_mask, init_rela_repr)
+            else:
+                raise NotImplementedError
         else:
             init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
 
@@ -1169,7 +1238,13 @@ class GLISemanticRoleLabelingModel(Model):
             # use local decode
             if(self.n_gnn_layers>0):
                 init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
-                init_rela_repr = self.gnn_interaction(local_mask, if_argument, local_p_a_mask, init_rela_repr)
+                if(self.gnn == 'lambda'):
+                    init_rela_repr = self.lambda_inter(local_mask, if_argument, local_p_a_mask, init_rela_repr)
+                elif(self.gnn == 'gan'):
+                    init_rela_repr = self.gan_inter(local_mask, if_argument, local_p_a_mask, init_rela_repr)
+                else:
+                    raise NotImplementedError
+
             else:
                 init_rela_repr = self.init_rela_repr(local_p_a_mask, predicate_repr, argument_repr)
             # relas: [m]
@@ -1185,7 +1260,12 @@ class GLISemanticRoleLabelingModel(Model):
             if(self.n_gnn_layers>0):
                 # [n, n_mlp_relation]
                 init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
-                init_rela_repr = self.gnn_interaction(dp_mask, if_argument, dp_p_a_mask, init_rela_repr)
+                if(self.gnn == 'lambda'):
+                    init_rela_repr = self.lambda_inter(dp_mask, if_argument, dp_p_a_mask, init_rela_repr)
+                elif(self.gnn == 'gan'):
+                    init_rela_repr = self.gan_inter(dp_mask, if_argument, dp_p_a_mask, init_rela_repr)
+                else:
+                    raise NotImplementedError
             else:
                 init_rela_repr = self.init_rela_repr(dp_p_a_mask, predicate_repr, argument_repr)
 
@@ -1303,7 +1383,12 @@ class GLISemanticRoleLabelingModel(Model):
             p_a_mask, pred_p, pred_a = self.filter_p_a_mask(p_a_mask, p_mask, span_mask)
             # [k, n_mlp_relation] k: true predicate x true span
             init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
-            init_rela_repr = self.gnn_interaction(pred_p, pred_a, p_a_mask, init_rela_repr)
+            if(self.gnn == 'lambda'):
+                init_rela_repr = self.lambda_inter(pred_p, pred_a, p_a_mask, init_rela_repr)
+            elif(self.gnn == 'gan'):
+                init_rela_repr = self.gan_inter(pred_p, pred_a, p_a_mask, init_rela_repr)
+            else:
+                raise NotImplementedError
         else:
             init_rela_repr = self.init_rela_repr(p_a_mask, predicate_repr, argument_repr)
         rela_loss = self.ce_criterion(self.relation_scorer(init_rela_repr), gold_relas[p_a_mask])

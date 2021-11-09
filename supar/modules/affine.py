@@ -72,6 +72,53 @@ class Biaffine(nn.Module):
         return s
 
 
+class SimpleBiaffine(nn.Module):
+    r"""
+    for gan label interaction
+    """
+    def __init__(self, n_in, bias_x=True, bias_y=True):
+        super().__init__()
+
+        self.n_in = n_in
+        self.bias_x = bias_x
+        self.bias_y = bias_y
+        self.weight = nn.Parameter(torch.Tensor(n_in+bias_x, n_in+bias_y))
+
+        self.reset_parameters()
+
+    def __repr__(self):
+        s = f"n_in={self.n_in}"
+        if self.bias_x:
+            s += f", bias_x={self.bias_x}"
+        if self.bias_y:
+            s += f", bias_y={self.bias_y}"
+
+        return f"{self.__class__.__name__}({s})"
+
+    def reset_parameters(self):
+        nn.init.normal_(self.weight)
+
+    def forward(self, v, neb):
+        r"""
+        Args:
+            v (torch.Tensor): ``[batch_size, n_in]``.
+            neb (torch.Tensor): ``[batch_size, max_neb_num, n_in]``.
+
+        Returns:
+            ~torch.Tensor:
+                A scoring tensor of shape ``[batch_size, max_neb_num]``.
+        """
+
+        if self.bias_x:
+            v = torch.cat((v, torch.ones_like(v[..., :1])), -1)
+        if self.bias_y:
+            neb = torch.cat((neb, torch.ones_like(neb[..., :1])), -1)
+        # [batch_size, n_out, seq_len, seq_len]
+        s = torch.einsum('bd,dd,bid->bi', v, self.weight, neb)
+
+        return s
+
+
 class Triaffine(nn.Module):
     r"""
     Triaffine layer for second-order scoring (:cite:`zhang-etal-2020-efficient`, :cite:`wang-etal-2019-second`).

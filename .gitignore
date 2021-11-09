@@ -21,6 +21,7 @@ exp
 results
 bert-*
 roberta-*
+chinese-roberta-wwm*
 
 # log and config files
 *.log

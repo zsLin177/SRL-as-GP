@@ -1035,7 +1035,6 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
         self.model.eval()
 
         total_loss, metric = 0, ArgumentMetric()
-
         for words, *feats, spans in loader:
             # [batch_size, seq_len+2, seq_len+2, seq_len+2]
             gold_relas = spans.masked_fill(spans.eq(-1), self.args.n_labels-1)
@@ -1360,6 +1359,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
             0.1,
             'interpolation': args.itp,
             'split': args.split,
+            'gnn': args.gnn,
             'n_gnn_layers':args.n_gnn
         })
         logger.info(f"{transform}")

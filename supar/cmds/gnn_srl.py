@@ -30,6 +30,7 @@ def main():
     subparser.add_argument('--split',
                            action='store_true',
                            help='whether to use different mlp for predicate and arg')
+    subparser.add_argument('--gnn', default='gan', help='use what types of gnn')
     subparser.add_argument('--n_gnn', default=0, type=int)
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
