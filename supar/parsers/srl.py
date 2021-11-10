@@ -997,12 +997,11 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
         return super().predict(**Config().update(locals()))
 
     def _train(self, loader, flag=0):
-        self.model.train()
 
         bar, metric = progress_bar(loader), ChartMetric()
 
         for i, (words, *feats, spans) in enumerate(bar, 1):
-            
+            self.model.train()
             # [batch_size, seq_len+2, seq_len+2, seq_len+2]
             gold_relas = spans.masked_fill(spans.eq(-1), self.args.n_labels-1)
             # [batch_size, seq_len+2]
@@ -1234,7 +1233,7 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
 
 
     @classmethod
-    def build(cls, path, min_freq=7, fix_len=20, **kwargs):
+    def build(cls, path, fix_len=20, **kwargs):
         r"""
         Build a brand-new Parser, including initialization of all data fields and model parameters.
 
@@ -1288,9 +1287,10 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
                                     pad=pad,
                                     unk=unk,
                                     bos=bos,
+                                    eos=eos,
                                     fix_len=args.fix_len)
             if 'lemma' in args.feat:
-                LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, lower=True)
+                LEMMA = Field('lemmas', pad=pad, unk=unk, bos=bos, eos=eos, lower=True)
             if 'bert' in args.feat:
                 from transformers import (AutoTokenizer, GPT2Tokenizer,
                                           GPT2TokenizerFast)
@@ -1329,39 +1329,72 @@ class GnnLabelInteractionSemanticRoleLabelingParser(Parser):
         # LABEL.build(train)
         SPAN.build(train)
         SPAN.vocab.extend(['[NULL]'])
-        args.update({
-            'n_words':
-            len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
-            'n_labels':
-            len(SPAN.vocab),
-            'n_tags':
-            len(TAG.vocab) if TAG is not None else None,
-            'n_chars':
-            len(CHAR.vocab) if CHAR is not None else None,
-            'char_pad_index':
-            CHAR.pad_index if CHAR is not None else None,
-            'n_lemmas':
-            len(LEMMA.vocab) if LEMMA is not None else None,
-            'bert_pad_index':
-            BERT.pad_index if BERT is not None else None,
-            'pad_index':
-            WORD.pad_index,
-            'bos_index':
-            WORD.bos_index,
-            'eos_index':
-            WORD.eos_index,
-            'unk_index':
-            WORD.unk_index,
-            'lr':
-            5e-5,
-            'epochs': 20, 
-            'warmup':
-            0.1,
-            'interpolation': args.itp,
-            'split': args.split,
-            'gnn': args.gnn,
-            'n_gnn_layers':args.n_gnn
-        })
+        if args.encoder != 'lstm':
+            args.update({
+                'n_words':
+                len(WORD.vocab) if args.encoder != 'lstm' else WORD.vocab.n_init,
+                'n_labels':
+                len(SPAN.vocab),
+                'n_tags':
+                len(TAG.vocab) if TAG is not None else None,
+                'n_chars':
+                len(CHAR.vocab) if CHAR is not None else None,
+                'char_pad_index':
+                CHAR.pad_index if CHAR is not None else None,
+                'n_lemmas':
+                len(LEMMA.vocab) if LEMMA is not None else None,
+                'bert_pad_index':
+                BERT.pad_index if BERT is not None else None,
+                'pad_index':
+                WORD.pad_index,
+                'bos_index':
+                WORD.bos_index,
+                'eos_index':
+                WORD.eos_index,
+                'unk_index':
+                WORD.unk_index,
+                'lr':
+                5e-5,
+                'epochs': 20, 
+                'warmup':
+                0.1,
+                'n_gnn_layers':args.n_gnn
+            })
+        else:
+            args.update({
+                'n_words':
+                WORD.vocab.n_init,
+                'n_labels':
+                len(SPAN.vocab),
+                'n_tags':
+                len(TAG.vocab) if TAG is not None else None,
+                'n_chars':
+                len(CHAR.vocab) if CHAR is not None else None,
+                'char_pad_index':
+                CHAR.pad_index if CHAR is not None else None,
+                'n_lemmas':
+                len(LEMMA.vocab) if LEMMA is not None else None,
+                'bert_pad_index':
+                BERT.pad_index if BERT is not None else None,
+                'pad_index':
+                WORD.pad_index,
+                'bos_index':
+                WORD.bos_index,
+                'eos_index':
+                WORD.eos_index,
+                'unk_index':
+                WORD.unk_index,
+                'lr':
+                2e-3,
+                'epochs': 5000, 
+                'mu': .9,
+                'nu': .9,
+                'eps': 1e-8,
+                'weight_decay': 3e-9,
+                'decay': .75,
+                'decay_steps': 5000,
+                'n_gnn_layers':args.n_gnn
+            })
         logger.info(f"{transform}")
 
         logger.info("Building the model")

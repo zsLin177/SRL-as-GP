@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from supar.modules import (CharLSTM, IndependentDropout, SharedDropout,
-                           TransformerEmbedding, VariationalLSTM)
+                           TransformerEmbedding, VariationalLSTM, LSTM)
 from supar.utils import Config
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
@@ -29,7 +29,7 @@ class Model(nn.Module):
                  bert_pooling='mean',
                  bert_pad_index=0,
                  embed_dropout=.33,
-                 n_lstm_hidden=400,
+                 n_lstm_hidden=600,
                  n_lstm_layers=3,
                  encoder_dropout=.33,
                  **kwargs):
@@ -42,8 +42,8 @@ class Model(nn.Module):
                                            embedding_dim=self.args.n_embed)
 
             self.args.n_input = self.args.n_embed
-            if self.args.n_pretrained != self.args.n_embed:
-                self.args.n_input += self.args.n_pretrained
+            # if self.args.n_pretrained != self.args.n_embed:
+            self.args.n_input += self.args.n_pretrained
             if 'tag' in self.args.feat:
                 self.tag_embed = nn.Embedding(num_embeddings=self.args.n_tags,
                                               embedding_dim=self.args.n_feat_embed)
@@ -71,7 +71,7 @@ class Model(nn.Module):
                 self.args.n_input += self.bert_embed.n_out
             self.embed_dropout = IndependentDropout(p=self.args.embed_dropout)
         if self.args.encoder == 'lstm':
-            self.encoder = VariationalLSTM(input_size=self.args.n_input,
+            self.encoder = LSTM(input_size=self.args.n_input,
                                            hidden_size=self.args.n_lstm_hidden,
                                            num_layers=self.args.n_lstm_layers,
                                            bidirectional=True,
@@ -113,10 +113,10 @@ class Model(nn.Module):
         word_embed = self.word_embed(ext_words)
         if hasattr(self, 'pretrained'):
             pretrained = self.pretrained(words)
-            if self.args.n_embed == self.args.n_pretrained:
-                word_embed += pretrained
-            else:
-                word_embed = torch.cat((word_embed, self.embed_proj(pretrained)), -1)
+            # if self.args.n_embed == self.args.n_pretrained:
+            #     word_embed += self.embed_proj(pretrained)
+            # else:
+            word_embed = torch.cat((word_embed, self.embed_proj(pretrained)), -1)
 
         feat_embeds = []
         if 'tag' in self.args.feat:

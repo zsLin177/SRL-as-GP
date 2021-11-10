@@ -873,7 +873,7 @@ class GLISemanticRoleLabelingModel(Model):
                  n_lemmas=None,
                  feat=['tag', 'char', 'lemma'],
                  n_embed=100,
-                 n_pretrained=125,
+                 n_pretrained=100,
                  n_feat_embed=100,
                  n_char_embed=50,
                  n_char_hidden=400,
@@ -935,11 +935,11 @@ class GLISemanticRoleLabelingModel(Model):
         self.relation_scorer = MLP(n_in=n_mlp_relation,
                                     n_out=n_labels,
                                     activation=False)
-        if(gnn == 'lambda'):
+        if(gnn == 'lambda' and n_gnn_layers > 0):
             self.q_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
             self.k_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
             self.v_mlp = MLP(n_in=n_mlp_relation, n_out=n_mlp_relation, activation=False)
-        elif(gnn == 'gan'):
+        elif(gnn == 'gan' and n_gnn_layers > 0):
             # now every layer use the same parameter
             self.att_W = nn.Parameter(torch.empty(n_mlp_relation, n_mlp_relation))
             self.att_B = nn.Parameter(torch.empty(n_mlp_relation, n_mlp_relation))
@@ -1364,8 +1364,9 @@ class GLISemanticRoleLabelingModel(Model):
         
         if(flag):
             p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
+        elif(not flag and self.n_gnn_layers == 0):
+            p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
         else:
-
             # use predicted
             pred_p = p_score.ge(0) & p_mask
             pred_a = torch.zeros_like(span_mask, dtype=torch.long)

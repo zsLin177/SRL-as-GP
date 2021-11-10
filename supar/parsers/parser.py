@@ -253,7 +253,10 @@ class Parser(object):
 
         elapsed = timedelta()
         best_e, best_metric = 1, Metric()
-        warm_up_epochs = math.ceil(args.epochs * args.warmup)
+        if args.encoder == 'bert':
+            warm_up_epochs = math.ceil(args.epochs * args.warmup)
+        else:
+            warm_up_epochs = 5
         for epoch in range(1, args.epochs + 1):
             start = datetime.now()
 
