@@ -39,7 +39,10 @@ class Vocab(object):
 
     def __getitem__(self, key):
         if isinstance(key, str):
-            return self.stoi[key]
+            if(key in self.stoi):
+                return self.stoi[key]
+            else:
+                return self.unk_index
         elif not isinstance(key, Iterable):
             return self.itos[key]
         elif isinstance(key[0], str):

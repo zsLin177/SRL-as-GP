@@ -1154,11 +1154,27 @@ class GLISemanticRoleLabelingModel(Model):
         # [batch_size, 2+seq_len]
         if_predicate = p_score.ge(0) & p_mask
         
-        if_argument = torch.zeros_like(span_mask, dtype=torch.long)
-        # [real_num]
-        masked_if_arg = a_score.ge(0).long()
-        # [batch_size, 2+seq_len, 2+seq_len]
-        if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
+        
+
+        # contain the top seq_len spans as candidate spans
+        span_scores = MIN * torch.ones_like(span_mask, dtype=torch.float)
+        span_scores.masked_scatter_(span_mask, a_score)
+        # [batch_size, seq_all_len]
+        indices = torch.reshape(torch.topk(span_scores.view(batch_size, seq_all_len*seq_all_len), seq_all_len, -1)[1], (batch_size*seq_all_len,))
+        b_idxs = torch.reshape(indices.new_tensor([[i]*seq_all_len for i in range(batch_size)]), (batch_size*seq_all_len,))
+        if_argument = span_scores.new_zeros(batch_size, seq_all_len*seq_all_len).bool()
+        if_argument[b_idxs, indices] = 1
+        if_argument = torch.reshape(if_argument, (batch_size, seq_all_len, seq_all_len)) & span_mask
+
+
+
+        # if_argument = torch.zeros_like(span_mask, dtype=torch.long)
+        # # use the p > 0.5 as threshold
+        # masked_if_arg = a_score.ge(0).long()
+        # # [batch_size, 2+seq_len, 2+seq_len]
+        # if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
+
+
         # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
         p_a_mask = if_predicate.unsqueeze(-1).unsqueeze(-1) & if_argument.unsqueeze(1)
 
@@ -1206,12 +1222,23 @@ class GLISemanticRoleLabelingModel(Model):
         # [batch_size, 2+seq_len]
         if_predicate = p_score.ge(0) & p_mask
         
-        if_argument = torch.zeros_like(span_mask, dtype=torch.long)
-        # [real_num]
-        masked_if_arg = a_score.ge(0).long()
-        # [batch_size, 2+seq_len, 2+seq_len]
-        if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
-        # [batch_size, 1]
+        # contain the top seq_len spans as candidate spans
+        span_scores = MIN * torch.ones_like(span_mask, dtype=torch.float)
+        span_scores.masked_scatter_(span_mask, a_score)
+        # [batch_size, seq_all_len]
+        indices = torch.reshape(torch.topk(span_scores.view(batch_size, seq_all_len*seq_all_len), seq_all_len, -1)[1], (batch_size*seq_all_len,))
+        b_idxs = torch.reshape(indices.new_tensor([[i]*seq_all_len for i in range(batch_size)]), (batch_size*seq_all_len,))
+        if_argument = span_scores.new_zeros(batch_size, seq_all_len*seq_all_len).bool()
+        if_argument[b_idxs, indices] = 1
+        if_argument = torch.reshape(if_argument, (batch_size, seq_all_len, seq_all_len)) & span_mask
+
+
+        # if_argument = torch.zeros_like(span_mask, dtype=torch.long)
+        # # [real_num]
+        # masked_if_arg = a_score.ge(0).long()
+        # # [batch_size, 2+seq_len, 2+seq_len]
+        # if_argument = if_argument.masked_scatter(span_mask, masked_if_arg).bool()
+        # # [batch_size, 1]
         
 
         # [batch_size, 2+seq_len, 2+seq_len, 2+seq_len]: [b, predicate, head, tail]
@@ -1357,6 +1384,7 @@ class GLISemanticRoleLabelingModel(Model):
 
 
     def loss(self, p_score, a_score, predicate_repr, argument_repr, p_mask, span_mask, gold_p, gold_span, gold_relas, flag=0):
+        batch_size, seq_all_len = p_score.shape
         p_loss = self.bce_criterion(p_score[p_mask], gold_p[p_mask].float())
         argument_loss = self.bce_criterion(a_score, gold_span[span_mask].float())
         # here currently use gold, may use predicted
@@ -1364,16 +1392,31 @@ class GLISemanticRoleLabelingModel(Model):
         
         if(flag):
             p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
-        elif(not flag and self.n_gnn_layers == 0):
-            p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
+        # elif(not flag and self.n_gnn_layers == 0):
+        #     p_a_mask = gold_p.bool().unsqueeze(-1).unsqueeze(-1) & gold_span.bool().unsqueeze(1)
         else:
             # use predicted
             pred_p = p_score.ge(0) & p_mask
-            pred_a = torch.zeros_like(span_mask, dtype=torch.long)
-            # [real_num]
-            masked_if_arg = a_score.ge(0).long()
-            # [batch_size, 2+seq_len, 2+seq_len]
-            pred_a = pred_a.masked_scatter(span_mask, masked_if_arg).bool()
+
+
+            # contain the top seq_len spans as candidate spans
+            span_scores = MIN * torch.ones_like(span_mask, dtype=torch.float)
+            span_scores.masked_scatter_(span_mask, a_score)
+            # [batch_size, seq_all_len]
+            indices = torch.reshape(torch.topk(span_scores.view(batch_size, seq_all_len*seq_all_len), seq_all_len, -1)[1], (batch_size*seq_all_len,))
+            b_idxs = torch.reshape(indices.new_tensor([[i]*seq_all_len for i in range(batch_size)]), (batch_size*seq_all_len,))
+            pred_a = span_scores.new_zeros(batch_size, seq_all_len*seq_all_len).bool()
+            pred_a[b_idxs, indices] = 1
+            pred_a = torch.reshape(pred_a, (batch_size, seq_all_len, seq_all_len)) & span_mask
+
+
+            # pred_a = torch.zeros_like(span_mask, dtype=torch.long)
+            # # [real_num]
+            # masked_if_arg = a_score.ge(0).long()
+            # # [batch_size, 2+seq_len, 2+seq_len]
+            # pred_a = pred_a.masked_scatter(span_mask, masked_if_arg).bool()
+
+
             p_a_mask = pred_p.unsqueeze(-1).unsqueeze(-1) & pred_a.unsqueeze(1)
 
 
