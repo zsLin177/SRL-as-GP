@@ -18,6 +18,7 @@ dist
 load_and_parse_forcup*
 bert-*
 roberta-*
+chinese-*
 
 # experimental results
 exp
@@ -31,6 +32,7 @@ results
 *pred
 *.txt
 *final
+gnn-conll05-topk-woPLMs
 
 # pycache
 __pycache__
