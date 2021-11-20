@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import argparse
-
 from supar import VISemanticRoleLabelingParser
 from supar.cmds.cmd import parse
 
@@ -34,6 +33,7 @@ def main():
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
     subparser.add_argument('--data', default='data/sdp/DM/test.conllu', help='path to dataset')
+    subparser.add_argument('--given_prd', action='store_true', default=False)
     # predict
     subparser = subparsers.add_parser('predict', help='Use a trained parser to make predictions.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
@@ -47,6 +47,13 @@ def main():
                            action='store_true',
                            default=False,
                            help='whether to use viterbi')
+
+    # api
+    subparser = subparsers.add_parser('api', help='test api for cup')
+    subparser.add_argument('--task', default='09', help='which dataset')
+    subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')
+    subparser.add_argument('--input', default='中国 建筑业 对 外 开放 始于 八十年代 。')
+    subparser.add_argument('--given_prd', action='store_true', default=False)
     parse(parser)
 
 

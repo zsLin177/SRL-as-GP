@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 import subprocess
 import dill
-import supar
+# import supar
 import torch
 import torch.distributed as dist
 from supar.utils import Config, Dataset
@@ -291,7 +291,7 @@ class Parser(object):
 
         logger.info("Evaluating the dataset")
         start = datetime.now()
-        metric = self._evaluate(dataset.loader)
+        metric = self._evaluate(dataset.loader, args.given_prd)
         elapsed = datetime.now() - start
         logger.info(f"- {metric}")
         logger.info(f"{elapsed}s elapsed, {len(dataset)/elapsed.total_seconds():.2f} Sents/s")
@@ -333,17 +333,17 @@ class Parser(object):
 
         return dataset
 
-    def api(self, input, pred=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
+    def api(self, input, task='09', prd_idxs=None, lang='en', buckets=8, batch_size=5000, prob=False, **kwargs):
         """
         input: a string like "中国 建筑业 对 外 开放 始于 八十年代 。"
         return: spans
         """
         args = self.args.update(locals())
-        pred = 'pred_span_srl.conllu'
         self.transform.train()
         dataset = Dataset(self.transform, input, lang=lang)
         dataset.build(args.batch_size, args.buckets)
-        preds = self._api(dataset.loader)
+        preds = self._api(dataset.loader, prd_idxs, task)
+        print(preds)
         return preds
 
 

@@ -5,7 +5,6 @@ import os
 from ast import literal_eval
 from configparser import ConfigParser
 
-import supar
 from supar.utils.fn import download
 
 
