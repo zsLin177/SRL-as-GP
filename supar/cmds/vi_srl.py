@@ -47,6 +47,10 @@ def main():
                            action='store_true',
                            default=False,
                            help='whether to use viterbi')
+    subparser.add_argument('--given_prd',
+                           action='store_true',
+                           default=False,
+                           help='whether to use given predicates')
 
     # api
     subparser = subparsers.add_parser('api', help='test api for cup')

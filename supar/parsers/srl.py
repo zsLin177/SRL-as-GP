@@ -182,7 +182,7 @@ class BiaffineSemanticRoleLabelingParser(Parser):
         if(torch.cuda.is_available()):
             strans = strans.cuda()
             trans = trans.cuda()
-        for words, *feats in progress_bar(loader):
+        for words, *feats, labels in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
@@ -193,8 +193,23 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             if(not self.args.vtb):
                 label_preds = self.model.decode(s_edge,
                                                 s_label).masked_fill(~mask, -1)
+                if self.args.given_prd:
+                    label_preds[:, :, 0] = labels[:, :, 0]
+                    prd_mask = labels[:, :, 0].eq(prd_idx)
+                    seq_len = label_preds.shape[1]
+                    prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
+                    prd_mask_2[:, :, 0] = 1
+                    label_preds.masked_fill_(~prd_mask_2, -1)
             else:
                 edge_preds, label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+                label_preds.masked_fill_(~mask, -1)
+                if self.args.given_prd:
+                    label_preds[:, :, 0] = labels[:, :, 0]
+                    prd_mask = labels[:, :, 0].eq(prd_idx)
+                    seq_len = label_preds.shape[1]
+                    prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
+                    prd_mask_2[:, :, 0] = 1
+                    label_preds.masked_fill_(~prd_mask_2, -1)
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
             if self.args.prob:
@@ -375,7 +390,7 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             WORD.bos_index,
             'lr':
             5e-5,
-            'epochs': 10, 
+            'epochs': 20, 
             'warmup':
             0.1,
             'interpolation': args.itp,
@@ -589,21 +604,21 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             # s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
             s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, labels, mask, True)
-            # if(not self.args.vtb):
-            #     label_preds = self.model.decode(s_edge,
-            #                                 s_label).masked_fill(~mask, -1)
-            # else:
+    
             label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            label_preds.masked_fill_(~mask, -1)
 
+            if self.args.given_prd:
+                    label_preds[:, :, 0] = labels[:, :, 0]
+                    prd_mask = labels[:, :, 0].eq(prd_idx)
+                    seq_len = label_preds.shape[1]
+                    prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
+                    prd_mask_2[:, :, 0] = 1
+                    label_preds.masked_fill_(~prd_mask_2, -1)
+            
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
-            # if self.args.prob:
-            #     preds['probs'].extend([
-            #         prob[1:i, :i].cpu()
-            #         for i, prob in zip(lens,
-            #                            s_edge.softmax(-1).unbind())
-            #     ])
-        # pdb.set_trace()
+            
         preds['labels'] = [
             CoNLL.build_relations(
                 [[self.LABEL.vocab[i] if i >= 0 else None for i in row]
@@ -959,9 +974,9 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             WORD.bos_index,
             'lr':
             5e-5,
-            'epochs': 10, 
+            'epochs': 30, 
             'warmup':
-            0.1,
+            0.2,
             'interpolation': args.itp,
             'split': args.split
         })

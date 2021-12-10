@@ -18,6 +18,8 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
 import random
 
+import pdb
+
 def change2(source_file, tgt_file, task):
     sum_false_count = 0
     sum_mismatch = 0
@@ -176,7 +178,19 @@ def produce_column_3(relas, prd_idx):
                         column.append('*' + ')')
                     else:
                         length = span_end - span_start + 1
+                        # del
                         column += ['*'] * length
+
+                        # contain label1
+                        # column.append('(' + label + '*')
+                        # column += ['*'] * (length - 2)
+                        # column.append('*' + ')')
+
+                        # contain label2
+                        # column.append('(' + label2 + '*')
+                        # column += ['*'] * (length - 2)
+                        # column.append('*' + ')')
+
                         mismatch += 1
                 else:
                     column.append('(' + label + '*' + ')')
@@ -238,10 +252,9 @@ class Parser(object):
         else:
             from transformers import AdamW, get_linear_schedule_with_warmup
             steps = len(train.loader) * args.epochs // args.update_steps
-            # pdb.set_trace()
             self.optimizer = AdamW(
-                [{'params': c.parameters(), 'lr': args.lr * (1 if n == 'encoder' else args.lr_rate)}
-                 for n, c in self.model.named_children()],
+                [{'params': c, 'lr': args.lr * (1 if n.startswith('encoder') else args.lr_rate)}
+                 for n, c in self.model.named_parameters()],
                 args.lr)
             self.scheduler = get_linear_schedule_with_warmup(self.optimizer, int(steps*args.warmup), steps)
 
