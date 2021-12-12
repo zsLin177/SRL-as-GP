@@ -714,8 +714,6 @@ class VISrlParser(BiaffineSrlParser):
         bar, metric = progress_bar(loader), ChartMetric()
 
         for i, (words, *feats, edges, labels) in enumerate(bar, 1):
-            # self.optimizer.zero_grad()
-
             mask = words.ne(self.WORD.pad_index)
             mask2 = mask.clone()
             mask2[:, 0] = 0
@@ -789,7 +787,7 @@ class VISrlParser(BiaffineSrlParser):
         con_sum = 0
         # strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2_1()
         # trans = self.prepare_detail_vtb(loader)
-        strans_3, trans_3, B_idxs_3, I_idxs_3, prd_idx_3 = self.prepare_viterbi()
+        strans_3, trans_3, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict = self.prepare_viterbi()
         if(torch.cuda.is_available()):
             # strans = strans.cuda()
             # trans = trans.cuda()
@@ -822,7 +820,7 @@ class VISrlParser(BiaffineSrlParser):
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
             else:
-                label_preds, p_num, con_p_num = self.model.viterbi_decode3(s_edge, s_label, strans_3, trans_3, mask2, mask, B_idxs_3, I_idxs_3, prd_idx_3)
+                label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode3(s_edge, s_label, strans_3, trans_3, mask2, mask, B_idxs_3, I_idxs_3, prd_idx_3)
                 label_preds.masked_fill_(~mask, -1)
                 if self.args.given_prd:
                     label_preds[:, :, 0] = labels[:, :, 0]
@@ -831,6 +829,7 @@ class VISrlParser(BiaffineSrlParser):
                     prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
+                label_preds = self.model.fix_label_cft(label_preds, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict, p_label)
 
             preds['labels'].extend(chart[1:i+1, :i+1].tolist()
                                    for i, chart in zip(lens, label_preds))
@@ -855,6 +854,7 @@ class VISrlParser(BiaffineSrlParser):
         trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
         B_idxs = []
         I_idxs = []
+        pair_dict = {}
         B2I_dict = {}
         for i, label in enumerate(self.LABEL.vocab.itos):
             if(label.startswith('I-')):
@@ -875,6 +875,22 @@ class VISrlParser(BiaffineSrlParser):
                 if(real_label in B2I_dict):
                     B2I_dict[real_label].append(i)
     
+        for idx, label in enumerate(self.LABEL.vocab.itos):
+            if label == '[prd]':
+                continue
+            position_label = label[0:2]
+            real_label = label[2:]
+            if position_label == 'B-':
+                pair_p_label = 'I-'
+            else:
+                pair_p_label = 'B-'
+            pair_label = pair_p_label+real_label
+            if pair_label in self.LABEL.vocab.itos:
+                pair_dict[idx] = self.LABEL.vocab.itos.index(pair_label)
+            else:
+                # for some label, they only have B-x
+                pair_dict[idx] = idx
+
         # for key, value in B2I_dict.items():
         #     if(len(value)>1):
         #         b_idx = value[0]
@@ -899,8 +915,7 @@ class VISrlParser(BiaffineSrlParser):
 
         strans[-2] = -float('inf')
         
-        # pdb.set_trace()
-        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict
 
     @torch.no_grad()
     def prepare_detail_vtb(self, loader):
