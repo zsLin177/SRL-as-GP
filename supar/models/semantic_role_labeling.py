@@ -111,7 +111,7 @@ class BiaffineSrlModel(nn.Module):
                  char_pad_index=0,
                  bert=None,
                  n_bert_layers=4,
-                 mix_dropout=.0,
+                 mix_dropout=0.2,
                  bert_pad_index=0,
                  embed_dropout=.2,
                  n_lstm_hidden=600,
@@ -162,7 +162,7 @@ class BiaffineSrlModel(nn.Module):
         if 'bert' in feat:
             self.bert_embed = BertEmbedding(model=bert,
                                             n_layers=n_bert_layers,
-                                            n_out=n_feat_embed,
+                                            n_out=None,
                                             pad_index=bert_pad_index,
                                             dropout=mix_dropout)
             self.n_input += self.bert_embed.n_out
@@ -429,6 +429,62 @@ class BiaffineSrlModel(nn.Module):
                 Predicted edges and labels of shape ``[batch_size, seq_len, seq_len]``.
         """
         return s_edge.argmax(-1), s_label.argmax(-1)
+
+    def fix_label_cft(self, label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label):
+        '''
+        solve label conflicts such as B-a and I-b
+        '''
+        # [batch_size, seq_len]
+        pred_mask = label_preds[:, :, 0].eq(prd_idx)
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len]
+        k_seq = label_preds[batch_idx, :, pred_idx]
+        k_seq = k_seq.masked_fill(k_seq.eq(prd_idx), -1)
+        lst = k_seq.tolist()
+        k = k_seq.shape[0]
+        # [k, seq_len, raw_label_num]
+        k_prob = p_label[batch_idx, :, pred_idx, :]
+
+        for i in range(k):
+            seq = lst[i][1:]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                elif(seq[j] in I_idxs):
+                    print('exists position conflicts')
+                    break
+                else:
+                    span_start = j+1
+                    b_label_idx = seq[j]
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] in B_idxs):
+                            break
+                        else:
+                            span_end = j+1
+                            i_label_idx = seq[j]
+                            if pair_dict[i_label_idx] != b_label_idx:
+                                # happen a label conflict
+                                span_start_prob = k_prob[i, span_start, b_label_idx].item()
+                                span_end_prob = k_prob[i, span_end, i_label_idx].item()
+                                if abs(span_start_prob - span_end_prob) < 1:
+                                    lst[i][span_start] = -1
+                                    lst[i][span_end] = -1
+                                else:
+                                    if span_start_prob > span_end_prob:
+                                        lst[i][span_end] = pair_dict[b_label_idx]
+                                    else:
+                                        lst[i][span_start] = pair_dict[i_label_idx]
+                            j += 1
+                            break
+        new_k_seq = torch.tensor(lst, dtype=torch.long, device=label_preds.device)
+        label_preds[batch_idx, :, pred_idx] = new_k_seq
+        return label_preds
     
     def detect_conflict(self, label_preds, pred_mask, B_idxs, I_idxs, prd_idx):
         """to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
@@ -586,13 +642,15 @@ class BiaffineSrlModel(nn.Module):
         # [batch_size, seq_len]
         pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
         k = pred_mask.sum()  # num of the conflict predicate
+
+        # [batch_size, seq_len, seq_len, raw_label_num]
+        p_label = s_label.softmax(-1)
         if(k <= 0):
-            return edge_preds, label_preds
+            return edge_preds, label_preds, p_label
         
         # [batch_size, seq_len, seq_len, 2]
         p_edge = s_edge.softmax(-1)
-        # [batch_size, seq_len, seq_len, raw_label_num]
-        p_label = s_label.softmax(-1)
+        
 
         #[batch_size, seq_len, seq_len, raw_label_num]
         weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
@@ -662,7 +720,7 @@ class BiaffineSrlModel(nn.Module):
             pdb.set_trace()
             new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
-        return edge_preds, label_preds
+        return edge_preds, label_preds, p_label
 
 
 

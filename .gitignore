@@ -19,6 +19,9 @@ load_and_parse_forcup*
 bert-*
 roberta-*
 chinese-*
+*.jpg
+draw.py
+*.final
 
 # experimental results
 exp
