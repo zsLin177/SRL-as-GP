@@ -32,6 +32,8 @@ chinese-roberta-wwm-ext-large
 *.pred
 *.txt
 *.final
+*.jpg
+draw.py
 
 # pycache
 __pycache__

@@ -421,7 +421,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         self.LEMMA = self.transform.LEMMA
         self.TAG = self.transform.POS
         self.LABEL = self.transform.PHEAD
-        self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx = self.prepare_viterbi()
+        self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx, self.pair_dict = self.prepare_viterbi()
 
     def train(self,
               train,
@@ -587,7 +587,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         self.model.eval()
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
-        strans, trans, B_idxs, I_idxs, prd_idx = self.strans, self.trans, self.B_idxs, self.I_idxs, self.prd_idx
+        strans, trans, B_idxs, I_idxs, prd_idx, pair_dict = self.prepare_viterbi()
         if(torch.cuda.is_available()):
             strans = strans.cuda()
             trans = trans.cuda()
@@ -605,7 +605,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, labels, mask, True)
     
-            label_preds = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            label_preds, p_label = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
             label_preds.masked_fill_(~mask, -1)
 
             if self.args.given_prd:
@@ -616,6 +616,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
             
+            label_preds = self.model.fix_label_cft(label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label)
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
             
@@ -815,6 +816,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
         B_idxs = []
         I_idxs = []
+        pair_dict = {}
         B2I_dict = {}
         for i, label in enumerate(self.LABEL.vocab.itos):
             if(label.startswith('I-')):
@@ -835,6 +837,22 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
                 if(real_label in B2I_dict):
                     B2I_dict[real_label].append(i)
     
+        for idx, label in enumerate(self.LABEL.vocab.itos):
+            if label == '[prd]':
+                continue
+            position_label = label[0:2]
+            real_label = label[2:]
+            if position_label == 'B-':
+                pair_p_label = 'I-'
+            else:
+                pair_p_label = 'B-'
+            pair_label = pair_p_label+real_label
+            if pair_label in self.LABEL.vocab.itos:
+                pair_dict[idx] = self.LABEL.vocab.itos.index(pair_label)
+            else:
+                # for some label, they only have B-x
+                pair_dict[idx] = idx
+
         # for key, value in B2I_dict.items():
         #     if(len(value)>1):
         #         b_idx = value[0]
@@ -843,8 +861,10 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         #             trans[b_idx][idx] = -float('inf')
         #         trans[b_idx][i_idx] = 0
 
+        # for i in B_idxs:
+        #     trans[i][-1] = -float('inf')
         for i in B_idxs:
-            trans[i][-1] = -float('inf')
+            trans[-2][i] = -float('inf')
 
         for i in I_idxs:
             for j in I_idxs:
@@ -857,8 +877,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
 
         strans[-2] = -float('inf')
         
-        # pdb.set_trace()
-        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict
 
 
     @classmethod
