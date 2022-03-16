@@ -4,9 +4,7 @@ import pdb
 import subprocess
 import torch
 import torch.nn as nn
-from torch.nn import parameter
 from torch.serialization import load
-from supar import models
 from supar.models import (BiaffineSrlModel,
                           VISrlModel)
 from supar.parsers.parser import Parser
@@ -735,7 +733,10 @@ class VISrlParser(BiaffineSrlParser):
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            
+            # [batch_size, seq_len]
+            if_prd = edges[..., 0].gt(0) & mask2
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, edges, labels, mask, mask2)
             loss = loss / self.args.update_steps
@@ -772,7 +773,9 @@ class VISrlParser(BiaffineSrlParser):
             mask2[:, 0] = 0
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+
+            if_prd = edges[..., 0].gt(0) & mask2
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
             # loss, s_edge = self.model.loss(s_edge, s_sib, s_cop, s_grd,
             #                                s_label, edges, labels, mask)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
@@ -821,7 +824,9 @@ class VISrlParser(BiaffineSrlParser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+
+            if_prd = edges[..., 0].gt(0) & mask2
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, edges, labels, mask, mask2, True)
@@ -1145,7 +1150,8 @@ class VISrlParser(BiaffineSrlParser):
             'unk_index': WORD.unk_index,
             'interpolation': args.itp,
             'encoder': args.encoder,
-            'elmo_dropout': args.elmo_dropout
+            'elmo_dropout': args.elmo_dropout,
+            'gold_p': args.given_prd
         })
         logger.info(f"{transform}")
         logger.info("Building the model")

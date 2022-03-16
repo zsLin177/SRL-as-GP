@@ -50,6 +50,11 @@ def main():
                            default=7,
                            type=int,
                            help='The minimum frequency needed to include a token in the vocabulary')
+    subparser.add_argument('--given_prd',
+                           action='store_true',
+                           default=False,
+                           help='whether use predicate embedding')
+
     # evaluate
     subparser = subparsers.add_parser('evaluate', help='Evaluate the specified parser and dataset.')
     subparser.add_argument('--buckets', default=8, type=int, help='max num of buckets to use')

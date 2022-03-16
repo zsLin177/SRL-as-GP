@@ -928,7 +928,7 @@ class VISrlModel(nn.Module):
     def __init__(self,
                  n_words,
                  n_labels,
-                 use_pred=False,
+                 gold_p=False,
                  split=False,
                  encoder='lstm',
                  n_tags=None,
@@ -969,6 +969,13 @@ class VISrlModel(nn.Module):
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
+        if self.args.gold_p:
+            # self.prd_embed = nn.Parameter(torch.FloatTensor(n_embed))
+            # nn.init.normal_(self.prd_embed)
+            # 0 is not prd, 1 is prd
+            self.prd_embed = nn.Embedding(num_embeddings=2,
+                                       embedding_dim=n_embed)
+
         if (encoder == 'lstm'):
             self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
         else:
@@ -1114,7 +1121,7 @@ class VISrlModel(nn.Module):
             self.pretrained = nn.Embedding.from_pretrained(embed)
         return self
 
-    def forward(self, words, feats):
+    def forward(self, words, feats, if_prd=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -1142,6 +1149,10 @@ class VISrlModel(nn.Module):
 
         # get outputs from embedding layers
         word_embed = self.word_embed(ext_words)
+        # get prd_embed
+        if if_prd is not None and self.args.gold_p:
+            word_embed = word_embed + self.prd_embed(if_prd.long())
+
         if hasattr(self, 'pretrained'):
             word_embed = torch.cat(
                 (word_embed, self.embed_proj(self.pretrained(words))), -1)
