@@ -161,7 +161,9 @@ class BiaffineSrlParser(Parser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             # if(self.args.repr_gold):
-            s_edge, s_label = self.model(words, feats, edges)
+
+            if_prd = edges[..., 0].gt(0)
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             # else:
             #     s_edge, s_label = self.model(words, feats)
             loss = self.model.loss(s_edge, s_label, edges, labels, mask)
@@ -190,7 +192,8 @@ class BiaffineSrlParser(Parser):
             mask = words.ne(self.WORD.pad_index)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            if_prd = edges[..., 0].gt(0)
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             # loss = self.model.loss(s_edge, s_label, edges, labels, mask)
             # total_loss += loss.item()
 
@@ -226,7 +229,8 @@ class BiaffineSrlParser(Parser):
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_label = self.model(words, feats)
+            if_prd = edges[..., 0].gt(0)
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             if(not self.args.vtb):
                 edge_preds, label_preds = self.model.decode(s_edge, s_label)
                 label_preds.masked_fill_(~mask, -1)
@@ -597,7 +601,8 @@ class BiaffineSrlParser(Parser):
             'unk_index': WORD.unk_index,
             'interpolation': interpolation,
             'encoder': args.encoder,
-            'elmo_dropout': args.elmo_dropout
+            'elmo_dropout': args.elmo_dropout,
+            'gold_p': args.given_prd
         })
         logger.info(f"{transform}")
         logger.info("Building the model")

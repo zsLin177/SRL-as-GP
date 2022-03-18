@@ -75,6 +75,11 @@ def main():
     subparser.add_argument('--repr_gold',
                            action='store_true',
                            help='whether to use gold predicates during train to repr label')
+    subparser.add_argument('--given_prd',
+                           action='store_true',
+                           default=False,
+                           help='whether use predicate embedding')
+
     # subparser.add_argument('--sig',
     #                        action='store_true',
     #                        help='whether to use sigmod during edge')

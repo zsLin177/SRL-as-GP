@@ -94,7 +94,7 @@ class BiaffineSrlModel(nn.Module):
     def __init__(self,
                  n_words,
                  n_labels,
-                 use_pred=False,
+                 gold_p=False,
                  split=False,
                  encoder='lstm',
                  n_tags=None,
@@ -131,6 +131,14 @@ class BiaffineSrlModel(nn.Module):
         # the embedding layer
         self.word_embed = nn.Embedding(num_embeddings=n_words,
                                        embedding_dim=n_embed)
+
+        if self.args.gold_p:
+            # self.prd_embed = nn.Parameter(torch.FloatTensor(n_embed))
+            # nn.init.normal_(self.prd_embed)
+            # 0 is not prd, 1 is prd
+            self.prd_embed = nn.Embedding(num_embeddings=2,
+                                       embedding_dim=n_embed)
+
         if (encoder == 'lstm'):
             self.embed_proj = nn.Linear(n_pretrained_embed, n_embed_proj)
         else:
@@ -268,7 +276,7 @@ class BiaffineSrlModel(nn.Module):
             self.pretrained = nn.Embedding.from_pretrained(embed)
         return self
 
-    def forward(self, words, feats, edges=None):
+    def forward(self, words, feats, if_prd=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -296,6 +304,9 @@ class BiaffineSrlModel(nn.Module):
 
         # get outputs from embedding layers
         word_embed = self.word_embed(ext_words)
+        # get prd_embed
+        if if_prd is not None and self.args.gold_p:
+            word_embed = word_embed + self.prd_embed(if_prd.long())
         if hasattr(self, 'pretrained'):
             word_embed = torch.cat(
                 (word_embed, self.embed_proj(self.pretrained(words))), -1)
@@ -344,17 +355,8 @@ class BiaffineSrlModel(nn.Module):
             label_d = self.mlp_label_d(x)
             label_h = self.mlp_label_h(x)
         else:
-            # if(not self.args.sig):
-            # [batch_size, seq_len, seq_len]
-            if(edges != None):
-                # repr gold
-                edge_pred = edges
-            else:
-                # repr pred
-                edge_pred = s_edge.argmax(-1)
-            # else:
-            #     edge_pred = s_edge.ge(0).long()
-            # [batch_size, seq_len]
+            
+            edge_pred = s_edge.argmax(-1)
             mask[:, 0] = 0
             if_prd = edge_pred[..., 0].eq(1) & mask
             label_d = self.arg_label_d(x)
