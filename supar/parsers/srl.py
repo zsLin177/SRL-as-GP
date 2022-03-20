@@ -13,7 +13,7 @@ from supar.utils import Config, Dataset, Embedding
 from supar.utils.common import bos, pad, unk
 from supar.utils.field import ChartField, Field, SubwordField
 from supar.utils.logging import get_logger, progress_bar
-from supar.utils.metric import ChartMetric
+from supar.utils.metric import ChartMetric, SrlMetric
 from supar.utils.transform import CoNLL
 
 logger = get_logger(__name__)
@@ -565,7 +565,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
     def _evaluate(self, loader, given_prd=False):
         self.model.eval()
 
-        total_loss, metric = 0, ChartMetric()
+        total_loss, metric = 0, SrlMetric()
 
         for words, *feats, labels in loader:
             word_mask = words.ne(self.args.pad_index)
