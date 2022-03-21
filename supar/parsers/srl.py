@@ -132,7 +132,9 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             loss = self.model.loss(s_edge, s_label, labels, mask)
             loss = loss / self.args.update_steps
             loss.backward()
@@ -154,14 +156,16 @@ class BiaffineSemanticRoleLabelingParser(Parser):
     def _evaluate(self, loader):
         self.model.eval()
 
-        total_loss, metric = 0, ChartMetric()
+        total_loss, metric = 0, SrlMetric()
 
         for words, *feats, labels in loader:
             word_mask = words.ne(self.args.pad_index)
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_label = self.model(words, feats)
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             # loss = self.model.loss(s_edge, s_label, labels, mask)
             # total_loss += loss.item()
 
@@ -189,7 +193,9 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             mask[:, 0] = 0
             n_mask = mask[:, :, 0]
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_label = self.model(words, feats)
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_label = self.model(words, feats, if_prd=if_prd)
             if(not self.args.vtb):
                 label_preds = self.model.decode(s_edge,
                                                 s_label).masked_fill(~mask, -1)
@@ -409,11 +415,12 @@ class BiaffineSemanticRoleLabelingParser(Parser):
             WORD.bos_index,
             'lr':
             5e-5,
-            'epochs': 20, 
+            'epochs': 10, 
             'warmup':
             0.1,
             'interpolation': args.itp,
-            'split': args.split
+            'split': args.split,
+            'gold_p': args.given_prd
         })
         logger.info(f"{transform}")
 
@@ -541,7 +548,9 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
             # pdb.set_trace()
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, labels, mask)
@@ -574,10 +583,12 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             mask = word_mask if len(words.shape) < 3 else word_mask.any(-1)
             mask = mask.unsqueeze(1) & mask.unsqueeze(2)
             mask[:, 0] = 0
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
-            loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
-                                           x, labels, mask)
-            total_loss += loss.item()
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
+            s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
+                                           x, labels, mask, if_pred=True)
+            # total_loss += loss.item()
 
             if(not given_prd):
                 label_preds = self.model.decode(s_edge, s_label)
@@ -597,7 +608,7 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
                 metric(label_preds.masked_fill(~mask, -1),
                     labels.masked_fill(~mask, -1))
 
-        total_loss /= len(loader)
+        # total_loss /= len(loader)
 
         return metric
 
@@ -619,7 +630,9 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             mask[:, 0] = 0
             n_mask = mask[:, :, 0]
             lens = mask[:, 1].sum(-1).tolist()
-            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats)
+            edges = labels.ge(0) & mask
+            if_prd = edges[..., 0]
+            s_edge, s_sib, s_cop, s_grd, x = self.model(words, feats, if_prd)
             # s_edge = self.model.inference((s_edge, s_sib, s_cop, s_grd), mask)
             s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, labels, mask, True)
@@ -1012,11 +1025,12 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             WORD.bos_index,
             'lr':
             5e-5,
-            'epochs': 30, 
+            'epochs': 10, 
             'warmup':
-            0.2,
+            0.1,
             'interpolation': args.itp,
-            'split': args.split
+            'split': args.split,
+            'gold_p': args.given_prd
         })
         logger.info(f"{transform}")
 

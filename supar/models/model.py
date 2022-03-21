@@ -38,6 +38,10 @@ class Model(nn.Module):
         self.args = Config().update(locals())
 
         if self.args.encoder != 'bert':
+            if self.args.gold_p:
+                self.prd_embed = nn.Embedding(num_embeddings=2,
+                                            embedding_dim=n_embed)
+
             self.word_embed = nn.Embedding(num_embeddings=self.args.n_words,
                                            embedding_dim=self.args.n_embed)
 
@@ -87,6 +91,9 @@ class Model(nn.Module):
                                                 requires_grad=True)
             self.encoder_dropout = nn.Dropout(p=self.args.encoder_dropout)
             self.args.n_hidden = self.encoder.n_out
+            if self.args.gold_p:
+                self.prd_embed = nn.Embedding(num_embeddings=2,
+                                        embedding_dim=self.args.n_hidden)
 
     def load_pretrained(self, embed=None):
         if embed is not None:
@@ -133,13 +140,15 @@ class Model(nn.Module):
 
         return embed
 
-    def encode(self, words, feats=None):
+    def encode(self, words, feats=None, if_prd=None):
         if self.args.encoder == 'lstm':
             x = pack_padded_sequence(self.embed(words, feats), words.ne(self.args.pad_index).sum(1).tolist(), True, False)
             x, _ = self.encoder(x)
             x, _ = pad_packed_sequence(x, True, total_length=words.shape[1])
         else:
             x = self.encoder(words)
+            if if_prd is not None and self.args.gold_p:
+                x = x + self.prd_embed(if_prd.long())
         return self.encoder_dropout(x)
 
     def decode(self):

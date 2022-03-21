@@ -90,6 +90,7 @@ class BiaffineSemanticRoleLabelingModel(Model):
     def __init__(self,
                  n_words,
                  n_labels,
+                 gold_p=False,
                  n_tags=None,
                  n_chars=None,
                  n_lemmas=None,
@@ -106,7 +107,6 @@ class BiaffineSemanticRoleLabelingModel(Model):
                  mix_dropout=.0,
                  bert_pooling='mean',
                  bert_pad_index=0,
-                 freeze=True,
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
@@ -167,7 +167,7 @@ class BiaffineSemanticRoleLabelingModel(Model):
                                    bias_y=True)
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, words, feats=None, edges=None):
+    def forward(self, words, feats=None, edges=None, if_prd=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -184,7 +184,7 @@ class BiaffineSemanticRoleLabelingModel(Model):
                 scores of all possible labels on each edge.
         """
 
-        x = self.encode(words, feats)
+        x = self.encode(words, feats, if_prd)
 
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
@@ -546,6 +546,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
     def __init__(self,
                  n_words,
                  n_labels,
+                 gold_p=False,
                  n_tags=None,
                  n_chars=None,
                  n_lemmas=None,
@@ -562,7 +563,6 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                  mix_dropout=.0,
                  bert_pooling='mean',
                  bert_pad_index=0,
-                 freeze=True,
                  embed_dropout=.2,
                  n_lstm_hidden=600,
                  n_lstm_layers=3,
@@ -641,7 +641,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                           LBPSemanticDependency)(max_iter)
         self.criterion = nn.CrossEntropyLoss()
 
-    def forward(self, words, feats=None):
+    def forward(self, words, feats=None, if_prd=None):
         r"""
         Args:
             words (~torch.LongTensor): ``[batch_size, seq_len]``.
@@ -658,7 +658,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                 all possible labels on each edge of shape ``[batch_size, seq_len, seq_len, n_labels]``.
         """
 
-        x = self.encode(words, feats)
+        x = self.encode(words, feats, if_prd)
 
         edge_d = self.mlp_edge_d(x)
         edge_h = self.mlp_edge_h(x)
@@ -704,6 +704,7 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
                 The tensor of gold-standard labels.
             mask (~torch.BoolTensor): ``[batch_size, seq_len]``.
                 The mask for covering the unpadded tokens.
+            if_pred: if now is during predicting
 
         Returns:
             ~torch.Tensor:
