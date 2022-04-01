@@ -20,7 +20,7 @@ def parse(parser):
                         help='seed for generating random numbers')
     parser.add_argument('--threads',
                         '-t',
-                        default=16,
+                        default=8,
                         type=int,
                         help='max num of threads')
     parser.add_argument('--batch-size',
@@ -39,6 +39,7 @@ def parse(parser):
     parser.add_argument('--elmo_dropout',
                         default=0.33,
                         type=float)
+    parser.add_argument('--schema', default='BE', choices=['BE', 'BII', 'BIES', 'SIM'], help='which schema to use')
 
     args, unknown = parser.parse_known_args()
     args, _ = parser.parse_known_args(unknown, args)

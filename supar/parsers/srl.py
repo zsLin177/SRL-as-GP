@@ -156,7 +156,6 @@ class BiaffineSrlParser(Parser):
         bar, metric = progress_bar(loader), ChartMetric()
 
         for i, (words, *feats, edges, labels) in enumerate(bar, 1):
-            # pdb.set_trace()
             # self.optimizer.zero_grad()
 
             mask = words.ne(self.WORD.pad_index)
@@ -801,19 +800,18 @@ class VISrlParser(BiaffineSrlParser):
 
         pred_sum = 0
         con_sum = 0
-        # strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2_1()
-        # trans = self.prepare_detail_vtb(loader)
-        strans_3, trans_3, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict = self.prepare_viterbi()
-        if(torch.cuda.is_available()):
-            # strans = strans.cuda()
-            # trans = trans.cuda()
-
-            strans_3 = strans_3.cuda()
-            trans_3 = trans_3.cuda()
-
+        if self.args.schema in ('BE', 'BII', 'BIES'):
+            if self.args.schema == 'BE':
+                strans, trans, B_idxs, I_idxs, prd_idx, pair_dict = self.prepare_viterbi_BE()
+            elif self.args.schema == 'BII':
+                strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi_BII()
+            elif self.args.schema == 'BIES':
+                strans, trans, B_idxs, I_idxs, E_idxs, S_idxs, prd_idx = self.prepare_viterbi_BIES()
+            if(torch.cuda.is_available()):
+                strans = strans.cuda()
+                trans = trans.cuda()
 
         for words, *feats, edges, labels in progress_bar(loader):
-            # pdb.set_trace()
             word_mask = words.ne(self.args.pad_index)
             mask2 = word_mask.clone()
             mask2[:, 0] = 0
@@ -825,27 +823,44 @@ class VISrlParser(BiaffineSrlParser):
             # s_edge = self.model.vi((s_edge, s_sib, s_cop, s_grd), mask)
             loss, s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, edges, labels, mask, mask2, True)
-            if(not self.args.vtb):
-                label_preds = self.model.decode(s_edge,
-                                            s_label).masked_fill(~mask, -1)
-                if self.args.given_prd:
-                    label_preds[:, :, 0] = labels[:, :, 0]
-                    prd_mask = labels[:, :, 0].eq(prd_idx_3)
-                    seq_len = label_preds.shape[1]
-                    prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
-                    prd_mask_2[:, :, 0] = 1
-                    label_preds.masked_fill_(~prd_mask_2, -1)
+            if self.args.schema in ('BE', 'BII', 'BIES'):
+                if(not self.args.vtb):
+                    label_preds = self.model.decode(s_edge,
+                                                s_label).masked_fill(~mask, -1)
+                    if self.args.given_prd:
+                        # use gold predicate to constrain
+                        label_preds[:, :, 0] = labels[:, :, 0]
+                        prd_mask = labels[:, :, 0].eq(prd_idx)
+                        seq_len = label_preds.shape[1]
+                        prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
+                        prd_mask_2[:, :, 0] = 1
+                        label_preds.masked_fill_(~prd_mask_2, -1)
+                else:
+                    if self.args.schema == 'BE':
+                        label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BE(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                    elif self.args.schema == 'BII':
+                        label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BII(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                    else:
+                        label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BIES(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, E_idxs, S_idxs, prd_idx)
+                    label_preds.masked_fill_(~mask, -1)
+                    if self.args.given_prd:
+                        # use gold predicate to constrain
+                        label_preds[:, :, 0] = labels[:, :, 0]
+                        prd_mask = labels[:, :, 0].eq(prd_idx)
+                        seq_len = label_preds.shape[1]
+                        prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
+                        prd_mask_2[:, :, 0] = 1
+                        label_preds.masked_fill_(~prd_mask_2, -1)
+                    if self.args.schema == 'BE':
+                        label_preds = self.model.fix_label_cft(label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label)
             else:
-                label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode3(s_edge, s_label, strans_3, trans_3, mask2, mask, B_idxs_3, I_idxs_3, prd_idx_3)
-                label_preds.masked_fill_(~mask, -1)
+                # schema == SIM
+                # this schema has the constrain that cannot be fixed currently
+                # TODO
+                label_preds = self.model.decode(s_edge, s_label).masked_fill(~mask, -1)
                 if self.args.given_prd:
+                    # use gold predicate to constrain
                     label_preds[:, :, 0] = labels[:, :, 0]
-                    prd_mask = labels[:, :, 0].eq(prd_idx_3)
-                    seq_len = label_preds.shape[1]
-                    prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
-                    prd_mask_2[:, :, 0] = 1
-                    label_preds.masked_fill_(~prd_mask_2, -1)
-                label_preds = self.model.fix_label_cft(label_preds, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict, p_label)
 
             preds['labels'].extend(chart[1:i+1, :i+1].tolist()
                                    for i, chart in zip(lens, label_preds))
@@ -864,7 +879,10 @@ class VISrlParser(BiaffineSrlParser):
 
         return preds
 
-    def prepare_viterbi(self):
+    def prepare_viterbi_BE(self):
+        '''
+        for BE schema
+        '''
         # [n_labels+2]
         strans = [0] * (len(self.LABEL.vocab)+2)
         trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
@@ -1015,7 +1033,10 @@ class VISrlParser(BiaffineSrlParser):
         
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict, single_idxs
 
-    def prepare_viterbi3(self):
+    def prepare_viterbi_BII(self):
+        '''
+        for BII schema
+        '''
         # for biiio
         strans = [0] * (len(self.LABEL.vocab)+1)
         trans = [[0] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
@@ -1042,10 +1063,83 @@ class VISrlParser(BiaffineSrlParser):
                     B2I_dict[real_label].append(i)
         
         for i in I_idxs:
+            # cannot trans from 'O' to 'I'
             trans[-1][i] = -float('inf')
         
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
     
+    def prepare_viterbi_BIES(self):
+        '''
+        for BIES schema
+        '''
+        strans = [-float('inf')] * (len(self.LABEL.vocab)+1)
+        # x:from y:to
+        trans = [[-float('inf')] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
+        B_idxs = []
+        I_idxs = []
+        E_idxs = []
+        S_idxs = []
+        permit_trans = set()
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                # strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+                permit_trans.add((i, i))
+                role = label[2:]
+                corres_e_label = 'E-'+role
+                corres_e_idx = self.LABEL.vocab.stoi[corres_e_label]
+                permit_trans.add((i, corres_e_idx))
+            elif label.startswith('B-'):
+                strans[i] = 0
+                B_idxs.append(i)
+                role = label[2:]
+                corres_i_label = 'I-'+role
+                corres_i_idx = self.LABEL.vocab.stoi[corres_i_label]
+                permit_trans.add((i, corres_i_idx))
+                corres_e_label = 'E-'+role
+                corres_e_idx = self.LABEL.vocab.stoi[corres_e_label]
+                permit_trans.add((i, corres_e_idx))
+            elif label.startswith('E-'):
+                # strans[i] = -float('inf')
+                E_idxs.append(i)
+            elif label.startswith('S-'):
+                strans[i] = 0
+                S_idxs.append(i)
+            elif label == '[prd]':
+                pass
+        # can strat with 'O'
+        strans[-1] = 0
+        # label
+        for x, y in permit_trans:
+            trans[x][y] = 0
+        
+        # start from E-
+        for i in E_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+        
+        # start from S-
+        for i in S_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+        
+        # start from 'O'
+        for j in B_idxs:
+            trans[-1][j] = 0
+        for j in S_idxs:
+            trans[-1][j] = 0
+        trans[-1][-1] = 0
+
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, E_idxs, S_idxs, self.LABEL.vocab.stoi['[prd]']
+        
+
+            
     @classmethod
     def build(cls,
               path,
