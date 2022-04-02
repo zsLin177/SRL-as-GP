@@ -20,7 +20,7 @@ def parse(parser):
                         help='seed for generating random numbers')
     parser.add_argument('--threads',
                         '-t',
-                        default=16,
+                        default=8,
                         type=int,
                         help='max num of threads')
     parser.add_argument('--batch-size',
@@ -36,7 +36,8 @@ def parse(parser):
                         default=0.06)
     parser.add_argument('--update_steps',
                         default=1,
-                        type=int)             
+                        type=int)     
+    parser.add_argument('--schema', default='BE', choices=['BE', 'BII', 'BIES', 'SIM'], help='which schema to use')        
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)

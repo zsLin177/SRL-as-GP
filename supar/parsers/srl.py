@@ -606,10 +606,16 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         self.model.eval()
 
         preds = {'labels': [], 'probs': [] if self.args.prob else None}
-        strans, trans, B_idxs, I_idxs, prd_idx, pair_dict = self.prepare_viterbi()
-        if(torch.cuda.is_available()):
-            strans = strans.cuda()
-            trans = trans.cuda()
+        if self.args.schema in ('BE', 'BII', 'BIES'):
+            if self.args.schema == 'BE':
+                strans, trans, B_idxs, I_idxs, prd_idx, pair_dict = self.prepare_viterbi_BE()
+            elif self.args.schema == 'BII':
+                strans, trans, B_idxs, I_idxs, prd_idx = self.prepare_viterbi_BII()
+            elif self.args.schema == 'BIES':
+                strans, trans, B_idxs, I_idxs, E_idxs, S_idxs, prd_idx = self.prepare_viterbi_BIES()
+            if(torch.cuda.is_available()):
+                strans = strans.cuda()
+                trans = trans.cuda()
         for words, *feats, labels in progress_bar(loader):
             word_mask = words.ne(self.args.pad_index)
             # mask2 = word_mask.clone()
@@ -624,7 +630,12 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             s_edge, s_label = self.model.loss(s_edge, s_sib, s_cop, s_grd,
                                            x, labels, mask, True)
     
-            label_preds, p_label = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            if self.args.schema == 'BE':
+                label_preds, p_label = self.model.viterbi_decode3(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            elif self.args.schema == 'BII':
+                        label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BII(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, prd_idx)
+            else:
+                label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BIES(s_edge, s_label, strans, trans, n_mask, mask, B_idxs, I_idxs, E_idxs, S_idxs, prd_idx)
             label_preds.masked_fill_(~mask, -1)
 
             if self.args.given_prd:
@@ -634,8 +645,8 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
                     prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
-            
-            label_preds = self.model.fix_label_cft(label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label)
+            if self.args.schema == 'BE':
+                label_preds = self.model.fix_label_cft(label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label)
             preds['labels'].extend(chart[1:i, :i].tolist()
                                    for i, chart in zip(lens, label_preds))
             
@@ -829,7 +840,10 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             return all_idxs
 
 
-    def prepare_viterbi(self):
+    def prepare_viterbi_BE(self):
+        '''
+        for BE schema
+        '''
         # [n_labels+2]
         strans = [0] * (len(self.LABEL.vocab)+2)
         trans = [[0] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
@@ -898,6 +912,110 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
         
         return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]'], pair_dict
 
+    def prepare_viterbi_BII(self):
+        '''
+        for BII schema
+        '''
+        # for biiio
+        strans = [0] * (len(self.LABEL.vocab)+1)
+        trans = [[0] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
+        B_idxs = []
+        I_idxs = []
+        B2I_dict = {}
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+            elif(label.startswith('B-')):
+                B_idxs.append(i)
+                B2I_dict[label[2:]] = [i]
+            elif(label == '[prd]'):
+                # label = [prd]
+                strans[i] = -float('inf')
+                trans[i] = [-float('inf')] * (len(self.LABEL.vocab)+1)
+                for j in range(len(trans)):
+                    trans[j][i] = -float('inf')
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                real_label = label[2:]
+                if(real_label in B2I_dict):
+                    B2I_dict[real_label].append(i)
+        
+        for i in I_idxs:
+            # cannot trans from 'O' to 'I'
+            trans[-1][i] = -float('inf')
+        
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, self.LABEL.vocab.stoi['[prd]']
+
+    def prepare_viterbi_BIES(self):
+        '''
+        for BIES schema
+        '''
+        strans = [-float('inf')] * (len(self.LABEL.vocab)+1)
+        # x:from y:to
+        trans = [[-float('inf')] * (len(self.LABEL.vocab)+1) for _ in range((len(self.LABEL.vocab)+1))]
+        B_idxs = []
+        I_idxs = []
+        E_idxs = []
+        S_idxs = []
+        permit_trans = set()
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('I-')):
+                # strans[i] = -float('inf')  # cannot start with I-
+                I_idxs.append(i)
+                permit_trans.add((i, i))
+                role = label[2:]
+                corres_e_label = 'E-'+role
+                corres_e_idx = self.LABEL.vocab.stoi[corres_e_label]
+                permit_trans.add((i, corres_e_idx))
+            elif label.startswith('B-'):
+                strans[i] = 0
+                B_idxs.append(i)
+                role = label[2:]
+                corres_i_label = 'I-'+role
+                corres_i_idx = self.LABEL.vocab.stoi[corres_i_label]
+                permit_trans.add((i, corres_i_idx))
+                corres_e_label = 'E-'+role
+                corres_e_idx = self.LABEL.vocab.stoi[corres_e_label]
+                permit_trans.add((i, corres_e_idx))
+            elif label.startswith('E-'):
+                # strans[i] = -float('inf')
+                E_idxs.append(i)
+            elif label.startswith('S-'):
+                strans[i] = 0
+                S_idxs.append(i)
+            elif label == '[prd]':
+                pass
+        # can strat with 'O'
+        strans[-1] = 0
+        # label
+        for x, y in permit_trans:
+            trans[x][y] = 0
+        
+        # start from E-
+        for i in E_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+        
+        # start from S-
+        for i in S_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+        
+        # start from 'O'
+        for j in B_idxs:
+            trans[-1][j] = 0
+        for j in S_idxs:
+            trans[-1][j] = 0
+        trans[-1][-1] = 0
+
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, I_idxs, E_idxs, S_idxs, self.LABEL.vocab.stoi['[prd]']
 
     @classmethod
     def build(cls, path, min_freq=7, fix_len=20, **kwargs):
@@ -1012,9 +1130,9 @@ class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
             WORD.bos_index,
             'lr':
             5e-5,
-            'epochs': 30, 
+            'epochs': 10, 
             'warmup':
-            0.2,
+            0.1,
             'interpolation': args.itp,
             'split': args.split
         })
