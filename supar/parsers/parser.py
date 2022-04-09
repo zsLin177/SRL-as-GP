@@ -360,8 +360,7 @@ def get_results(gold_path, pred_path, file_seed, task):
     child2 = subprocess.Popen('sh {} {} {}'.format(
         _SRL_CONLL_EVAL_SCRIPT, tgt_temp_file, gold_path), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     eval_info2 = child2.communicate()[0]
-    # pdb.set_trace()
-    # temp = str(eval_info).strip().split("\\n")
+    os.remove(tgt_temp_file)
     conll_recall = float(str(eval_info).strip().split("Overall")[1].strip().split('\\n')[0].split()[4])
     conll_precision = float(str(eval_info2).strip().split("Overall")[1].strip().split('\\n')[0].split()[4])
     conll_f1 = 2 * conll_recall * conll_precision / (conll_recall + conll_precision + 1e-12)
