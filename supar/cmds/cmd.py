@@ -20,7 +20,7 @@ def parse(parser):
                         help='seed for generating random numbers')
     parser.add_argument('--threads',
                         '-t',
-                        default=16,
+                        default=8,
                         type=int,
                         help='max num of threads')
     parser.add_argument('--batch-size',
