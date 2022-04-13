@@ -1264,4 +1264,209 @@ class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
         pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
         return pred_and_conflict
 
-    
+    def fix_label_cft_BES(self, label_preds, B_idxs, E_idxs, S_idxs, pair_dict, prd_idx, p_label):
+        '''
+        solve label conflicts such as B-a and I-b
+        '''
+        # [batch_size, seq_len]
+        pred_mask = label_preds[:, :, 0].eq(prd_idx)
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len]
+        k_seq = label_preds[batch_idx, :, pred_idx]
+        k_seq = k_seq.masked_fill(k_seq.eq(prd_idx), -1)
+        lst = k_seq.tolist()
+        k = k_seq.shape[0]
+        # [k, seq_len, raw_label_num]
+        k_prob = p_label[batch_idx, :, pred_idx, :]
+
+        for i in range(k):
+            seq = lst[i][1:]
+            length = len(seq)
+            j = 0
+            while(j < length):
+                if(seq[j] == -1):
+                    j += 1
+                elif(seq[j] in E_idxs):
+                    print('exists position conflicts')
+                    break
+                elif(seq[j] in S_idxs):
+                    j += 1
+                else:
+                    span_start = j+1
+                    b_label_idx = seq[j]
+                    j += 1
+                    while (j < length):
+                        if(seq[j] == -1):
+                            j += 1
+                        elif(seq[j] in B_idxs or seq[j] in S_idxs):
+                            break
+                        else:
+                            span_end = j+1
+                            i_label_idx = seq[j]
+                            if pair_dict[i_label_idx] != b_label_idx:
+                                # happen a label conflict
+                                span_start_prob = k_prob[i, span_start, b_label_idx].item()
+                                span_end_prob = k_prob[i, span_end, i_label_idx].item()
+                                if abs(span_start_prob - span_end_prob) < 1:
+                                    lst[i][span_start] = -1
+                                    lst[i][span_end] = -1
+                                else:
+                                    if span_start_prob > span_end_prob:
+                                        lst[i][span_end] = pair_dict[b_label_idx]
+                                    else:
+                                        lst[i][span_start] = pair_dict[i_label_idx]
+                            j += 1
+                            break
+        new_k_seq = torch.tensor(lst, dtype=torch.long, device=label_preds.device)
+        label_preds[batch_idx, :, pred_idx] = new_k_seq
+        return label_preds
+
+    def detect_conflict_BES(self, label_preds, pred_mask, B_idxs, E_idxs, S_idxs, B2E_dict, prd_idx):
+        '''
+        to detect whether exist conflict (now just B-I-I, not consider B_a-Ib)
+            for schema BES
+        Args:
+            label_preds ([type]): [batch_size, seq_len, seq_len]
+            pred_mask ([type]): [batch_size, seq_len]
+        return:
+            a mask: [k] True: exist conflict
+        '''
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len]
+        k_seq = label_preds[batch_idx, :, pred_idx]
+        k_seq = k_seq.masked_fill(k_seq.eq(prd_idx), -1)
+        lst = k_seq.tolist()
+        k = k_seq.shape[0]
+
+        mask = []
+        for i in range(k):
+            seq = lst[i][1:]
+            length = len(seq)
+            j = 0
+            flag = 0
+            while j<length:
+                if seq[j] == -1:
+                    j += 1
+                elif seq[j] in E_idxs:
+                    flag = 1
+                    break
+                elif seq[j] in S_idxs:
+                    j += 1
+                else:
+                    # seq[j] in B_idxs
+                    st = seq[j]
+                    j += 1
+                    if j>=length or seq[j] in S_idxs or seq[j] in B_idxs:
+                        flag = 1
+                        break
+                    if seq[j] in E_idxs:
+                        if seq[j] == B2E_dict[st]:
+                            j += 1
+                        else:
+                            flag = 1
+                            break
+                    else:
+                        # seq[j] == -1
+                        while j<length and seq[j] == -1:
+                            j += 1
+                        if j == length:
+                            flag = 1
+                            break
+                        elif seq[j] not in E_idxs:
+                            flag = 1
+                            break
+                        else:
+                            j += 1
+            if(flag == 1):
+                mask.append(True)
+            else:
+                mask.append(False)
+
+        conflict_mask = pred_mask.new_tensor(mask)
+        pred_and_conflict = pred_mask.clone()
+        pred_and_conflict = pred_and_conflict.masked_scatter(pred_mask, conflict_mask)
+        return pred_and_conflict
+
+    def viterbi_decode_BES(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, E_idxs, S_idxs, B2E_dict, prd_idx):
+        '''
+        for schema BES
+        '''
+        edge_preds = s_edge.ge(0.5).long()
+        label_preds = s_label.argmax(-1)
+        label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
+
+        raw_label_num = s_label.shape[-1]
+        t1, seq_len_all, t2 = edge_preds.shape[0], edge_preds.shape[1], edge_preds.shape[2]
+        # [batch_size, seq_len]
+        pred_mask = edge_preds[..., 0].eq(1) & mask
+
+        pred_predicate_num = pred_mask.sum().item()
+        # [batch_size, seq_len]
+        pred_mask = self.detect_conflict_BES(label_preds, pred_mask, B_idxs, E_idxs, S_idxs, B2E_dict, prd_idx)
+        k = pred_mask.sum().item()  # num of the conflict predicate
+
+        # [batch_size, seq_len, seq_len, raw_label_num]
+        p_label = s_label.softmax(-1)
+
+        if(k <= 0):
+            return label_preds, pred_predicate_num, k, p_label
+
+        # [batch_size, seq_len, seq_len, 2]
+        s_edge = s_edge.unsqueeze(-1)
+        p_edge = torch.cat((1-s_edge, s_edge), -1)
+
+        #[batch_size, seq_len, seq_len, raw_label_num]
+        weight1 = p_edge[..., 1].unsqueeze(-1).expand(-1, -1, -1, raw_label_num)
+        label_probs = weight1 * p_label
+        # [batch_size, seq_len, seq_len, 2]
+        weight2 = p_edge[..., 0].unsqueeze(-1).expand(-1, -1, -1, 2)
+
+        label_probs = torch.cat((label_probs, weight2), -1)
+
+        all_idxs = pred_mask.nonzero()
+        batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
+        # [k, seq_len, raw_label_num+2]
+        pred_scores = label_probs[batch_idx, :, pred_idx, :].log()
+        # [k, seq_len-1, n_labels+2] delete the bos
+        pred_scores = pred_scores[:, 1:, :]
+
+        emit = pred_scores.transpose(0, 1)
+        seq_len, batch_size, n_tags = emit.shape
+        delta = emit.new_zeros(seq_len, batch_size, n_tags)
+        paths = emit.new_zeros(seq_len, batch_size, n_tags, dtype=torch.long)
+        # pdb.set_trace()
+        delta[0] = strans + emit[0]  # [batch_size, n_tags]
+
+        for i in range(1, seq_len):
+            scores = trans + delta[i - 1].unsqueeze(-1)
+            scores, paths[i] = scores.max(1)
+            delta[i] = scores + emit[i]
+
+        preds = []
+        mask1 = mask[batch_idx, :][:, 1:].t()
+        for i, length in enumerate(mask1.sum(0).tolist()):
+            prev = torch.argmax(delta[length-1, i])
+            pred = [prev]
+            for j in reversed(range(1, length)):
+                prev = paths[j, i, prev]
+                pred.append(prev)
+            preds.append(paths.new_tensor(pred).flip(0))
+
+        preds = pad_sequence(preds, True, -1)
+        # pdb.set_trace()
+        preds = torch.cat((-torch.ones_like(preds[..., :1]).long(), preds), -1)
+        k, remain_len = preds.shape[0], seq_len_all - preds.shape[1]
+        if(remain_len > 0):
+            preds = torch.cat((preds, -preds.new_ones(k, remain_len, dtype=torch.long)), -1)
+        # preds: [k, seq_len_all]
+        # to mask O1, O2 to -1
+
+        preds = preds.masked_fill(preds.ge(raw_label_num), -1)
+        label_preds = label_preds.transpose(1, 2)
+        # pdb.set_trace()
+        label_preds = label_preds.masked_scatter(pred_mask.unsqueeze(-1).expand(-1, -1, seq_len_all), preds)
+        label_preds = label_preds.transpose(1, 2)
+
+        return label_preds, pred_predicate_num, k, p_label
