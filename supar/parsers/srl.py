@@ -809,15 +809,14 @@ class VISrlParser(BiaffineSrlParser):
 
         pred_sum = 0
         con_sum = 0
-        # strans, trans, B_idxs, I_idxs, prd_idx, pair_dict, single_idxs = self.prepare_viterbi2_1()
-        # trans = self.prepare_detail_vtb(loader)
-        strans_3, trans_3, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict = self.prepare_viterbi()
-        if(torch.cuda.is_available()):
-            # strans = strans.cuda()
-            # trans = trans.cuda()
-
-            strans_3 = strans_3.cuda()
-            trans_3 = trans_3.cuda()
+        if self.args.schema in ('BE', 'BES'):
+            if self.args.schema == 'BE':
+                strans, trans, B_idxs, I_idxs, prd_idx, pair_dict = self.prepare_viterbi()
+            elif self.args.schema == 'BES':
+                strans, trans, B_idxs, E_idxs, S_idxs, pair_dict, prd_idx = self.prepare_viterbi_BES()
+            if(torch.cuda.is_available()):
+                strans = strans.cuda()
+                trans = trans.cuda()
 
 
         for words, *feats, edges, labels in progress_bar(loader):
@@ -840,22 +839,28 @@ class VISrlParser(BiaffineSrlParser):
                                             s_label).masked_fill(~mask, -1)
                 if self.args.given_prd:
                     label_preds[:, :, 0] = labels[:, :, 0]
-                    prd_mask = labels[:, :, 0].eq(prd_idx_3)
+                    prd_mask = labels[:, :, 0].eq(prd_idx)
                     seq_len = label_preds.shape[1]
                     prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
             else:
-                label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode3(s_edge, s_label, strans_3, trans_3, mask2, mask, B_idxs_3, I_idxs_3, prd_idx_3)
+                if self.args.schema == 'BE':
+                    label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode3(s_edge, s_label, strans, trans, mask2, mask, B_idxs, I_idxs, prd_idx)
+                elif self.args.schema == 'BES':
+                    label_preds, p_num, con_p_num, p_label = self.model.viterbi_decode_BES(s_edge, s_label, strans, trans, mask2, mask, B_idxs, E_idxs, S_idxs, pair_dict, prd_idx)
                 label_preds.masked_fill_(~mask, -1)
                 if self.args.given_prd:
                     label_preds[:, :, 0] = labels[:, :, 0]
-                    prd_mask = labels[:, :, 0].eq(prd_idx_3)
+                    prd_mask = labels[:, :, 0].eq(prd_idx)
                     seq_len = label_preds.shape[1]
                     prd_mask_2 = prd_mask.unsqueeze(-1).expand(-1, -1, seq_len).transpose(1, 2).clone()
                     prd_mask_2[:, :, 0] = 1
                     label_preds.masked_fill_(~prd_mask_2, -1)
-                label_preds = self.model.fix_label_cft(label_preds, B_idxs_3, I_idxs_3, prd_idx_3, pair_dict, p_label)
+                if self.args.schema == 'BE':
+                    label_preds = self.model.fix_label_cft(label_preds, B_idxs, I_idxs, prd_idx, pair_dict, p_label)
+                elif self.args.schema == 'BES':
+                    label_preds = self.model.fix_label_cft_BES(label_preds, B_idxs, E_idxs, S_idxs, pair_dict,prd_idx, p_label)
 
             preds['labels'].extend(chart[1:i+1, :i+1].tolist()
                                    for i, chart in zip(lens, label_preds))
@@ -873,6 +878,80 @@ class VISrlParser(BiaffineSrlParser):
         # print('ratio of conficting predicates:', con_sum/pred_sum)
 
         return preds
+
+    def prepare_viterbi_BES(self):
+        '''
+        for BES schema
+        '''
+        # -2 is 'I' and -1 is "O"
+        strans = [-float('inf')] * (len(self.LABEL.vocab)+2)
+        trans = [[-float('inf')] * (len(self.LABEL.vocab)+2) for _ in range((len(self.LABEL.vocab)+2))]
+        B_idxs = []
+        E_idxs = []
+        S_idxs = []
+        permit_trans = set()
+        pair_dict = {}
+        for i, label in enumerate(self.LABEL.vocab.itos):
+            if(label.startswith('E-')):
+                # strans[i] = -float('inf')  # cannot start with E-
+                E_idxs.append(i)
+            elif label.startswith('B-'):
+                strans[i] = 0
+                B_idxs.append(i)
+                role = label[2:]
+                corres_e_label = 'E-'+role
+                corres_e_idx = self.LABEL.vocab.stoi[corres_e_label]
+                permit_trans.add((i, corres_e_idx))
+            elif label.startswith('S-'):
+                strans[i] = 0
+                S_idxs.append(i)
+            elif label == '[prd]':
+                pass
+        # can strat with 'O'
+        strans[-1] = 0
+        # label
+        for x, y in permit_trans:
+            trans[x][y] = 0
+        # start from B-
+        for i in B_idxs:
+            trans[i][-2] = 0
+
+            # for j in E_idxs:
+            #     trans[i][j] = 0
+
+        # start from E-
+        for i in E_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+
+        # start from S-
+        for i in S_idxs:
+            for j in B_idxs:
+                trans[i][j] = 0
+            for j in S_idxs:
+                trans[i][j] = 0
+            trans[i][-1] = 0
+
+        # start from I
+        for j in E_idxs:
+            trans[-2][j] = 0
+        trans[-2][-2] = 0
+
+        # start from O
+        for j in B_idxs:
+            trans[-1][j] = 0
+        for j in S_idxs:
+            trans[-1][j] = 0
+        trans[-1][-1] = 0
+
+        for x, y in permit_trans:
+            pair_dict[x] = y
+            pair_dict[y] = x
+
+        return torch.tensor(strans), torch.tensor(trans), B_idxs, E_idxs, S_idxs, pair_dict, self.LABEL.vocab.stoi['[prd]']
 
     def prepare_viterbi(self):
         # [n_labels+2]
@@ -1156,7 +1235,7 @@ class VISrlParser(BiaffineSrlParser):
             'interpolation': args.itp,
             'encoder': args.encoder,
             'elmo_dropout': args.elmo_dropout,
-            'gold_p': args.given_prd
+            'gold_p': args.train_given_prd
         })
         logger.info(f"{transform}")
         logger.info("Building the model")

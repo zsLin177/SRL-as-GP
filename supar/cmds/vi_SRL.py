@@ -50,7 +50,7 @@ def main():
                            default=7,
                            type=int,
                            help='The minimum frequency needed to include a token in the vocabulary')
-    subparser.add_argument('--given_prd',
+    subparser.add_argument('--train_given_prd',
                            action='store_true',
                            default=False,
                            help='whether use predicate embedding')
