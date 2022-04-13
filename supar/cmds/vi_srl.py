@@ -29,7 +29,7 @@ def main():
     subparser.add_argument('--split',
                            action='store_true',
                            help='whether to use different mlp for predicate and arg')
-    subparser.add_argument('--given_prd',
+    subparser.add_argument('--train_given_prd',
                            action='store_true',
                            default=False,
                            help='whether use predicate embedding')
@@ -54,7 +54,7 @@ def main():
     subparser.add_argument('--given_prd',
                            action='store_true',
                            default=False,
-                           help='whether to use given predicates')
+                           help='whether to use given predicates to constrain')
 
     # api
     subparser = subparsers.add_parser('api', help='test api for cup')

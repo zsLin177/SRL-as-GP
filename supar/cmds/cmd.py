@@ -36,7 +36,8 @@ def parse(parser):
                         default=0.06)
     parser.add_argument('--update_steps',
                         default=1,
-                        type=int)             
+                        type=int)
+    parser.add_argument('--schema', default='BE', choices=['BE', 'BES'], help='which schema to use')             
     # args, unknown = parser.parse_known_args()
     # args, unknown = parser.parse_known_args(unknown, args)
     # args = Config.load(**vars(args), unknown=unknown)

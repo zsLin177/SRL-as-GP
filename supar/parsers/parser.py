@@ -20,7 +20,184 @@ import random
 
 import pdb
 
-def change2(source_file, tgt_file, task):
+def change_BES(source_file, tgt_file, task):
+    '''
+    for BES
+    '''
+    sent_idx = 0
+    sum_conf1_count = 0
+    sum_conf2_count = 0
+    if(task == '05'):
+        word_idx_to_write = 2
+    else:
+        word_idx_to_write = 1
+    with open(source_file, 'r') as f:
+        lines = [line.strip() for line in f]
+    sentences = []
+    start, i = 0, 0
+    for line in lines:
+        if not line:
+            sentences.append(lines[start:i])
+            start = i + 1
+        i += 1
+
+    new_sentence_lsts = []
+    for sentence in sentences:
+        sent_idx += 1
+        sentence_lst = []
+        for line in sentence:
+            sentence_lst.append(line.split('\t'))
+        # sentence_lst:[line_lst,...,] line_lst:[num, word, lemma, _, pos, _, _, _, relas, _]
+
+        # firstly find all predicates 
+        num_words = len(sentence_lst)
+        prd_map = {}  # 33:1, 44:2
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (line_lst[8] == '_'):
+                continue
+            relas = line_lst[8].split('|')
+            for rela in relas:
+                head, rel = rela.split(':')
+                if (head == '0'):
+                    prd_map[i] = len(prd_map) + 1
+                    break
+
+        arc_values = []
+        # [[[a0],[a0]],]
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (line_lst[8] == '_'):
+                arc_value = [[] for j in range(len(prd_map))]
+                arc_values.append(arc_value)
+            else:
+                relas = line_lst[8].split('|')
+                arc_value = [[] for j in range(len(prd_map))]
+                for rela in relas:
+                    head, rel = rela.split(':')
+                    head_idx = int(head)
+                    if (head_idx in prd_map):
+                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
+                        arc_value[prd_map[head_idx] - 1].append(rel)
+                        # 应该只有一个，一个词根一个谓词只能有一个关系
+                arc_values.append(arc_value)
+
+        re_prd_map = {}  # 1:33, 2:44
+        for key, value in prd_map.items():
+            re_prd_map[value] = key
+
+        new_columns = []
+        column_1 = []
+        for i, line_lst in enumerate(sentence_lst, 1):
+            if (i in prd_map):
+                column_1.append(line_lst[word_idx_to_write])
+            else:
+                column_1.append('-')
+        new_columns.append(column_1)
+
+        for key, value in re_prd_map.items():
+            this_prd_arc = [
+                word_arc_lsts[key - 1] for word_arc_lsts in arc_values
+            ]
+            # [[rel], [rel], [],...]
+            this_prd_idx = value  # start from 1
+            this_column, con1, con2 = produce_column_BES(this_prd_arc, this_prd_idx)
+            sum_conf1_count += con1
+            sum_conf2_count += con2
+            new_columns.append(this_column)
+
+        new_sentence_lst = []
+        num_column = len(new_columns)
+        for i in range(num_words):
+            new_line_lst = []
+            for j in range(num_column):
+                new_line_lst.append(new_columns[j][i])
+            new_sentence_lst.append(new_line_lst)
+        new_sentence_lsts.append(new_sentence_lst)
+    print('conflict I-:'+str(sum_conf1_count))
+    print('conflict label:'+str(sum_conf2_count))
+    with open(tgt_file, 'w') as f:
+        for new_sentence_lst in new_sentence_lsts:
+            for line_lst in new_sentence_lst:
+                f.write(' '.join(line_lst) + '\n')
+            f.write('\n')
+
+def produce_column_BES(relas, prd_idx):
+    # used for BES
+    flag = 0
+    count = 0
+    count2 = 0
+    column = ['*'] * len(relas)
+    column[prd_idx-1] = '(V*)'
+    args = []
+    i = 0
+    while (i < len(relas)):
+        rel = relas[i]
+        if ((i + 1) == prd_idx):
+            # 其实谓词不影响
+            # column.append('(V*)')
+            i += 1
+        elif(rel == ['[prd]']):
+            # column.append('*')
+            i += 1
+        elif (len(rel) == 0):
+            # column.append('*')
+            i += 1
+        else:
+            s_rel = rel[0]
+            position_tag = s_rel[0]
+            label = s_rel[2:]  # label直接按第一个边界的label
+            if(position_tag == 'E'):
+                column.append('*')   # 直接把冲突的I删掉
+                i += 1
+                count += 1
+            elif position_tag == 'S':
+                args.append([i, i, label])
+                i += 1
+            else:
+                span_start = i
+                i += 1
+                if i>=len(relas):
+                    # column.append('(' + label + '*' + ')')
+                    i += 1
+                elif len(relas[i]) == 0:
+                    while i < len(relas) and len(relas[i]) == 0:
+                        i += 1
+                    if i < len(relas):
+                        if relas[i][0].startswith('E-'):
+                            new_label = relas[i][0][2:]
+                            if label != new_label:
+                                count2 += 1
+                            else:
+                                args.append([span_start, i, label])
+                        else:
+                            count += 1
+                        i += 1
+                elif relas[i][0].startswith('B-'):
+                    count += 1
+                    continue
+                elif relas[i][0].startswith('E-'):
+                    new_label = relas[i][0][2:]
+                    args.append([span_start, i, label])
+                    if label != new_label:
+                        count2 += 1
+                    i += 1
+                else:
+                    # relas[i][0].startswith('S-')
+                    new_label = relas[i][0][2:]
+                    args.append([i, i, new_label])
+                    i += 1
+                    count += 1
+
+    for st, ed, role in args:
+        length = ed-st+1
+        if length == 1:
+            column[st] = '(' + role + '*' + ')'
+        else:
+            column[st] = '(' + role + '*'
+            column[ed] = '*' + ')'
+
+    return column, count, count2
+
+def change_BE(source_file, tgt_file, task):
     sum_false_count = 0
     sum_mismatch = 0
     if(task == '05'):
@@ -95,7 +272,7 @@ def change2(source_file, tgt_file, task):
             ]
             # [[rel], [rel], [],...]
             this_prd_idx = value  # start from 1
-            this_column, count, mis_match = produce_column_3(this_prd_arc, this_prd_idx)
+            this_column, count, mis_match = produce_column_BE(this_prd_arc, this_prd_idx)
             sum_false_count += count
             sum_mismatch += mis_match
             new_columns.append(this_column)
@@ -117,7 +294,7 @@ def change2(source_file, tgt_file, task):
             f.write('\n')
 
 
-def produce_column_3(relas, prd_idx):
+def produce_column_BE(relas, prd_idx):
     # used for simple crosstag
     # 暂时是直接按照预测的B、I进行划分
     count = 0
@@ -199,10 +376,15 @@ def produce_column_3(relas, prd_idx):
 
 
 
-def get_results(gold_path, pred_path, file_seed, task):
+def get_results(gold_path, pred_path, file_seed, task, schema):
     _SRL_CONLL_EVAL_SCRIPT = 'conll05-original-style/eval.sh'
     tgt_temp_file = 'tgt_temp_file' + file_seed
-    change2(pred_path, tgt_temp_file, task)
+    if schema == 'BE':
+        change_BE(pred_path, tgt_temp_file, task)
+    elif schema == "BES":
+        change_BES(pred_path, tgt_temp_file, task)
+    else:
+        raise NotImplementedError
     child = subprocess.Popen('sh {} {} {}'.format(
         _SRL_CONLL_EVAL_SCRIPT, gold_path, tgt_temp_file), shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     eval_info = child.communicate()[0]
@@ -340,7 +522,7 @@ class Parser(object):
             rand_file_seed1 = random.randint(1,100)
             rand_file_seed2 = random.randint(1,100)
             test_conll_f1, test_lisa_f1 = 0, 0
-            conll_recall, conll_precision, test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task)
+            conll_recall, conll_precision, test_conll_f1, test_lisa_f1 = get_results(args.gold, pred, str(rand_file_seed1)+'-'+str(rand_file_seed2), args.task, args.schema)
             logger.info(f"-P:{conll_precision:6.4} R:{conll_recall:6.4} F1:{test_conll_f1:6.4}")
 
         return dataset
