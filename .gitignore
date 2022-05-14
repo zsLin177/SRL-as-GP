@@ -22,6 +22,7 @@ results
 bert-*
 roberta-large
 chinese-roberta-wwm-ext-large
+xlnet*
 
 # log and config files
 *.log
