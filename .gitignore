@@ -4,6 +4,7 @@ exp
 conll05-original-style
 old_data
 bert-base-chinese
+xlnet*
 
 # bash scripts
 *.sh
