@@ -33,17 +33,6 @@ class VLR(_LRScheduler):
 
 
 class BiaffineSrlParser(Parser):
-    r"""
-    The implementation of Biaffine Semantic Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 20178.
-          `Simpler but More Accurate Semantic Dependency Parsing`_.
-
-    .. _Simpler but More Accurate Semantic Dependency Parsing:
-        https://www.aclweb.org/anthology/P18-2077/
-    """
-
     NAME = 'biaffine-semantic-role-labeling'
     MODEL = BiaffineSrlModel
 
@@ -621,16 +610,6 @@ class BiaffineSrlParser(Parser):
         return cls(args, model, transform, optimizer, scheduler)
 
 class VISrlParser(BiaffineSrlParser):
-    r"""
-    The implementation of Semantic Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
-
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
-    """
 
     NAME = 'vi-semantic-role-labeling'
     MODEL = VISrlModel

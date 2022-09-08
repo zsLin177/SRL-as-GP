@@ -51,7 +51,7 @@ python -m supar.cmds.vi_SRL train -b \
 python -m supar.cmds.vi_SRL predict --data data/BES/conll05/BES-wsj.conllu \
         -p exp/exp1/model \
         --pred BES-wsj.pred \
-        --gold data/conll05-original-style/wsj.final \
+        --gold data/wsj.final \
         --task 05 \
         --schema BES \
         --vtb \
@@ -60,6 +60,35 @@ python -m supar.cmds.vi_SRL predict --data data/BES/conll05/BES-wsj.conllu \
 * "--vtb" means whether to use constrained viterbi.
 
 ### Training models with pre-trained language models
+```shell
+# switch to the finetune-given_prd
+git checkout finetune-given_prd
+# training
+python -m supar.cmds.vi_srl train -b \
+        --train data/BES/conll05/BES-train.conllu \
+        --dev data/BES/conll05/BES-dev.conllu \
+        --test data/BES/conll05/BES-wsj.conllu \
+        --batch-size 500 \
+        --encoder bert \
+        --itp 0.06 \
+        --bert bert-large-uncased \
+        --split \
+        --lr_rate 1 \
+        --seed 1 \
+        --train_given_prd \
+        -p exp/exp2/model \
+        -d 4 
 
+# prediction and evaluation
+python -m supar.cmds.vi_srl predict --data data/BES/conll05/BES-wsj.conllu \
+        -p exp/exp2/model \
+        --pred BES-wsj-bert.pred \
+        --gold data/wsj.final \
+        --task 05 \
+        --schema BES \
+        --vtb \
+        -d 4
 
-
+```
+* use "--bert" to specify which language model, currently support [bert](https://huggingface.co/bert-large-uncased), [roberta](https://huggingface.co/hfl/chinese-roberta-wwm-ext-large), [xlnet](https://huggingface.co/xlnet-large-cased).
+* You can delete the "--train_given_prd" in the script to train a end-to-end model.
