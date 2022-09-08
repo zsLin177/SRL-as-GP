@@ -20,9 +20,6 @@ logger = get_logger(__name__)
 
 
 class BiaffineSemanticRoleLabelingParser(Parser):
-    r"""
-    The implementation of Biaffine Semantic Dependency Parser (:cite:`dozat-etal-2018-simpler`).
-    """
 
     NAME = 'biaffine-semantic-role-labeling'
     MODEL = BiaffineSemanticRoleLabelingModel
@@ -433,9 +430,6 @@ class BiaffineSemanticRoleLabelingParser(Parser):
 
 
 class VISemanticRoleLabelingParser(BiaffineSemanticRoleLabelingParser):
-    r"""
-    The implementation of SRL Parser using Variational Inference (:cite:`wang-etal-2019-second`).
-    """
 
     NAME = 'vi-semantic-role-labeling'
     MODEL = VISemanticRoleLabelingModel

@@ -11,7 +11,6 @@ from torch.nn.utils.rnn import pad_sequence
 
 class BiaffineSemanticRoleLabelingModel(Model):
     r"""
-    The implementation of Biaffine Semantic Dependency Parser (:cite:`dozat-etal-2018-simpler`).
 
     Args:
         n_words (int):
@@ -459,8 +458,6 @@ class BiaffineSemanticRoleLabelingModel(Model):
 
 class VISemanticRoleLabelingModel(BiaffineSemanticRoleLabelingModel):
     r"""
-    The implementation of Semantic Dependency Parser using Variational Inference (:cite:`wang-etal-2019-second`).
-
     Args:
         n_words (int):
             The size of the word vocabulary.
