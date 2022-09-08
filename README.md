@@ -92,3 +92,6 @@ python -m supar.cmds.vi_srl predict --data data/BES/conll05/BES-wsj.conllu \
 ```
 * use "--bert" to specify which language model, currently support [bert](https://huggingface.co/bert-large-uncased), [roberta](https://huggingface.co/hfl/chinese-roberta-wwm-ext-large), [xlnet](https://huggingface.co/xlnet-large-cased).
 * You can delete the "--train_given_prd" in the script to train a end-to-end model.
+
+## Trained Models
+* Here, we currently provide two model trained on conll2005 with bert in BES schema, i.e., [end-to-end model](https://drive.google.com/drive/folders/1DYF0DNhgrZKJUae2lNljU2v3xEO7N00R?usp=sharing), [predicate-given model](https://drive.google.com/drive/folders/1M7ukkIIj80UlALP7hoiWVfkSVBBXOeiD?usp=sharing).
