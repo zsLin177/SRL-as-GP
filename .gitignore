@@ -34,7 +34,6 @@ results
 *.out
 *.07
 *pred
-*.txt
 *final
 gnn-conll05-topk-woPLMs
 
