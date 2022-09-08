@@ -38,14 +38,6 @@ def main():
     subparser.add_argument('--repr_gold',
                            action='store_true',
                            help='whether to use gold predicates during train to repr label')
-    # subparser.add_argument('--dev_gold',
-    #                        default='data/conll05-original-style/sc-dev.final')
-    # subparser.add_argument('--dev_pred',
-    #                        default='dev_mfvi_pred')
-    # subparser.add_argument('--test_gold',
-    #                        default='data/conll05-original-style/sc-wsj.final')
-    # subparser.add_argument('--test_pred',
-    #                        default='test_mfvi_pred')
     subparser.add_argument('--min_freq',
                            default=7,
                            type=int,

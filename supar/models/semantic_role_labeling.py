@@ -16,81 +16,6 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 class BiaffineSrlModel(nn.Module):
-    r"""
-    The implementation of Biaffine Semantic Dependency Parser.
-
-    References:
-        - Timothy Dozat and Christopher D. Manning. 2018.
-          `Simpler but More Accurate Semantic Dependency Parsing`_.
-
-    Args:
-        n_words (int):
-            The size of the word vocabulary.
-        n_labels (int):
-            The number of labels in the treebank.
-        n_tags (int):
-            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
-        n_chars (int):
-            The number of characters, needed if character-level representations are used. Default: ``None``.
-        n_lemmas (int):
-            The number of lemmas, needed if lemma embeddings are used. Default: ``None``.
-        feat (str):
-            Additional features to use，separated by commas.
-            ``'tag'``: POS tag embeddings.
-            ``'char'``: Character-level representations extracted by CharLSTM.
-            ``'lemma'``: Lemma embeddings.
-            ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            Default: ``'tag,char,lemma'``.
-        n_embed (int):
-            The size of word embeddings. Default: 100.
-        n_embed_proj (int):
-            The size of linearly transformed word embeddings. Default: 125.
-        n_feat_embed (int):
-            The size of feature representations. Default: 100.
-        n_char_embed (int):
-            The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
-        char_pad_index (int):
-            The index of the padding token in the character vocabulary. Default: 0.
-        bert (str):
-            Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
-            This is required if ``feat='bert'``. The full list can be found in `transformers`_.
-            Default: ``None``.
-        n_bert_layers (int):
-            Specifies how many last layers to use. Required if ``feat='bert'``.
-            The final outputs would be the weight sum of the hidden states of these layers.
-            Default: 4.
-        mix_dropout (float):
-            The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
-        bert_pad_index (int):
-            The index of the padding token in the BERT vocabulary. Default: 0.
-        embed_dropout (float):
-            The dropout ratio of input embeddings. Default: .2.
-        n_lstm_hidden (int):
-            The size of LSTM hidden states. Default: 600.
-        n_lstm_layers (int):
-            The number of LSTM layers. Default: 3.
-        lstm_dropout (float):
-            The dropout ratio of LSTM. Default: .33.
-        n_mlp_edge (int):
-            Edge MLP size. Default: 600.
-        n_mlp_label  (int):
-            Label MLP size. Default: 600.
-        edge_mlp_dropout (float):
-            The dropout ratio of edge MLP layers. Default: .25.
-        label_mlp_dropout (float):
-            The dropout ratio of label MLP layers. Default: .33.
-        interpolation (int):
-            Constant to even out the label/edge loss. Default: .1.
-        pad_index (int):
-            The index of the padding token in the word vocabulary. Default: 0.
-        unk_index (int):
-            The index of the unknown token in the word vocabulary. Default: 1.
-
-    .. _Simpler but More Accurate Semantic Dependency Parsing:
-        https://www.aclweb.org/anthology/P18-2077/
-    .. _transformers:
-        https://github.com/huggingface/transformers
-    """
     def __init__(self,
                  n_words,
                  n_labels,
@@ -541,7 +466,7 @@ class BiaffineSrlModel(nn.Module):
     def viterbi_decode4(self, s_edge, s_label, strans, trans, mask, mask2, B_idxs, I_idxs, prd_idx):
         # 一阶段结果只提供先验概率，不作为强制条件
         edge_preds = s_edge.argmax(-1)
-        pred_mask = edge_preds[..., 0].eq(1) & mask  # 所有谓词，不管有没有冲突
+        pred_mask = edge_preds[..., 0].eq(1) & mask
         label_preds = -torch.ones_like(edge_preds).long()
         label_preds[:, :, 0] = edge_preds[:, :, 0]
         label_preds.masked_fill_(label_preds.lt(1), -1)
@@ -619,7 +544,6 @@ class BiaffineSrlModel(nn.Module):
         new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
         n_k = new_pred_mask.sum()  # num of the conflict predicate
         if(n_k > 0):
-            pdb.set_trace()
             new_pred_mask = self.detect_conflict(label_preds, pred_mask, B_idxs, I_idxs, prd_idx)
 
         return edge_preds, label_preds
@@ -795,16 +719,14 @@ class BiaffineSrlModel(nn.Module):
     def viterbi_decode2(self, s_edge, s_label, strans, trans, mask, mask2):
         edge_preds = s_edge.argmax(-1)
         raw_seq_len = edge_preds.shape[1]
-        # 直接把指向自己的边去掉
+        # del edge to self
         edge_preds[:, range(raw_seq_len), range(raw_seq_len)] = 0
         edge_preds[: 0] = 0
         edge_preds = (edge_preds.gt(0) & mask2).long()
         label_preds = s_label.argmax(-1)
-        # 直接把没有边的设为-1
         label_preds = label_preds.masked_fill(~(edge_preds.gt(0) & mask2), -1)
         # [batch_size, seq_len]
         pred_mask = edge_preds[..., 0].eq(1) & mask
-        # 有用谓词，排除掉了没有孩子的谓词
         pred_mask = pred_mask & edge_preds.sum(1).gt(0)
         all_idxs = pred_mask.nonzero()
         batch_idx, pred_idx = all_idxs[:, 0], all_idxs[:, 1]
@@ -844,89 +766,6 @@ class BiaffineSrlModel(nn.Module):
 
 
 class VISrlModel(nn.Module):
-    r"""
-    The implementation of Semantic Dependency Parser using Variational Inference.
-
-    References:
-        - Xinyu Wang, Jingxian Huang and Kewei Tu. 2019.
-          `Second-Order Semantic Dependency Parsing with End-to-End Neural Networks`_.
-
-    Args:
-        n_words (int):
-            The size of the word vocabulary.
-        n_labels (int):
-            The number of labels in the treebank.
-        n_tags (int):
-            The number of POS tags, needed if POS tag embeddings are used. Default: ``None``.
-        n_chars (int):
-            The number of characters, needed if character-level representations are used. Default: ``None``.
-        n_lemmas (int):
-            The number of lemmas, needed if lemma embeddings are used. Default: ``None``.
-        feat (str):
-            Additional features to use，separated by commas.
-            ``'tag'``: POS tag embeddings.
-            ``'char'``: Character-level representations extracted by CharLSTM.
-            ``'lemma'``: Lemma embeddings.
-            ``'bert'``: BERT representations, other pretrained langugae models like XLNet are also feasible.
-            Default: ``'tag,char,lemma'``.
-        n_embed (int):
-            The size of word embeddings. Default: 100.
-        n_embed_proj (int):
-            The size of linearly transformed word embeddings. Default: 125.
-        n_feat_embed (int):
-            The size of feature representations. Default: 100.
-        n_char_embed (int):
-            The size of character embeddings serving as inputs of CharLSTM, required if ``feat='char'``. Default: 50.
-        char_pad_index (int):
-            The index of the padding token in the character vocabulary. Default: 0.
-        bert (str):
-            Specifies which kind of language model to use, e.g., ``'bert-base-cased'`` and ``'xlnet-base-cased'``.
-            This is required if ``feat='bert'``. The full list can be found in `transformers`_.
-            Default: ``None``.
-        n_bert_layers (int):
-            Specifies how many last layers to use. Required if ``feat='bert'``.
-            The final outputs would be the weight sum of the hidden states of these layers.
-            Default: 4.
-        mix_dropout (float):
-            The dropout ratio of BERT layers. Required if ``feat='bert'``. Default: .0.
-        bert_pad_index (int):
-            The index of the padding token in the BERT vocabulary. Default: 0.
-        embed_dropout (float):
-            The dropout ratio of input embeddings. Default: .2.
-        n_lstm_hidden (int):
-            The size of LSTM hidden states. Default: 600.
-        n_lstm_layers (int):
-            The number of LSTM layers. Default: 3.
-        lstm_dropout (float):
-            The dropout ratio of LSTM. Default: .33.
-        n_mlp_un (int):
-            Unary factor MLP size. Default: 600.
-        n_mlp_bin (int):
-            Binary factor MLP size. Default: 150.
-        n_mlp_label  (int):
-            Label MLP size. Default: 600.
-        un_mlp_dropout (float):
-            The dropout ratio of unary factor MLP layers. Default: .25.
-        bin_mlp_dropout (float):
-            The dropout ratio of binary factor MLP layers. Default: .25.
-        label_mlp_dropout (float):
-            The dropout ratio of label MLP layers. Default: .33.
-        inference (str):
-            Approximate inference methods. Default: 'mfvi'.
-        max_iter (int):
-            Max iteration times for Variational Inference. Default: 3.
-        interpolation (int):
-            Constant to even out the label/edge loss. Default: .1.
-        pad_index (int):
-            The index of the padding token in the word vocabulary. Default: 0.
-        unk_index (int):
-            The index of the unknown token in the word vocabulary. Default: 1.
-
-    .. _Second-Order Semantic Dependency Parsing with End-to-End Neural Networks:
-        https://www.aclweb.org/anthology/P19-1454/
-    .. _transformers:
-        https://github.com/huggingface/transformers
-    """
     def __init__(self,
                  n_words,
                  n_labels,

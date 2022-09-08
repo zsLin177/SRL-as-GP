@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import pdb
 import os
 from datetime import datetime, timedelta
 import subprocess
@@ -70,9 +69,7 @@ def change_BES(source_file, tgt_file, task):
                     head, rel = rela.split(':')
                     head_idx = int(head)
                     if (head_idx in prd_map):
-                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
                         arc_value[prd_map[head_idx] - 1].append(rel)
-                        # 应该只有一个，一个词根一个谓词只能有一个关系
                 arc_values.append(arc_value)
 
         re_prd_map = {}  # 1:33, 2:44
@@ -127,7 +124,6 @@ def produce_column_BES(relas, prd_idx):
     while (i < len(relas)):
         rel = relas[i]
         if ((i + 1) == prd_idx):
-            # 其实谓词不影响
             # column.append('(V*)')
             i += 1
         elif(rel == ['[prd]']):
@@ -139,9 +135,9 @@ def produce_column_BES(relas, prd_idx):
         else:
             s_rel = rel[0]
             position_tag = s_rel[0]
-            label = s_rel[2:]  # label直接按第一个边界的label
+            label = s_rel[2:]
             if(position_tag == 'E'):
-                column.append('*')   # 直接把冲突的I删掉
+                column.append('*')   # del false I
                 i += 1
                 count += 1
             elif position_tag == 'S':
@@ -220,7 +216,6 @@ def change_BE(source_file, tgt_file, task):
             sentence_lst.append(line.split('\t'))
         # sentence_lst:[line_lst,...,] line_lst:[num, word, lemma, _, pos, _, _, _, relas, _]
 
-        # 先找出所有的谓词
         num_words = len(sentence_lst)
         prd_map = {}  # 33:1, 44:2
         for i, line_lst in enumerate(sentence_lst, 1):
@@ -246,9 +241,7 @@ def change_BE(source_file, tgt_file, task):
                     head, rel = rela.split(':')
                     head_idx = int(head)
                     if (head_idx in prd_map):
-                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
                         arc_value[prd_map[head_idx] - 1].append(rel)
-                        # 应该只有一个，一个词根一个谓词只能有一个关系
                 arc_values.append(arc_value)
 
         re_prd_map = {}  # 1:33, 2:44
@@ -317,8 +310,6 @@ def change(source_file, tgt_file, task):
             sentence_lst.append(line.split('\t'))
         # sentence_lst:[line_lst,...,] line_lst:[num, word, lemma, _, pos, _, _, _, relas, _]
 
-        # 老老实实写吧
-        # 先找出所有的谓词
         num_words = len(sentence_lst)
         prd_map = {}  # 33:1, 44:2
         for i, line_lst in enumerate(sentence_lst, 1):
@@ -344,9 +335,7 @@ def change(source_file, tgt_file, task):
                     head, rel = rela.split(':')
                     head_idx = int(head)
                     if (head_idx in prd_map):
-                        # 这个步骤保证是srl结构，去掉0，和那些没有被预测为谓词的，边（这样应该好点，因为谓词预测准确率应该蛮高）
                         arc_value[prd_map[head_idx] - 1].append(rel)
-                        # 应该只有一个，一个词根一个谓词只能有一个关系
                 arc_values.append(arc_value)
 
         re_prd_map = {}  # 1:33, 2:44
@@ -388,7 +377,6 @@ def change(source_file, tgt_file, task):
             f.write('\n')
 
 def produce_column_1(relas, prd_idx):
-    # 暂时是直接按照预测的B、I进行划分,然后选最多的label作为label
     count = 0
     column = []
     # span_start = -1
@@ -408,8 +396,6 @@ def produce_column_1(relas, prd_idx):
             s_rel = rel[0]
             position_tag = s_rel[0]
             label = s_rel[2:]
-            # if (position_tag in ('B', 'I')):
-                # 这里把I也考虑进来，防止第一个是I（I之前没有B，那么这个I当成B）
             if(position_tag == 'I'):
                 # pdb.set_trace()
                 column.append('*')   # 直接把冲突的I删掉
@@ -427,7 +413,6 @@ def produce_column_1(relas, prd_idx):
                             relas[i][0][2:], 0) + 1
                         i += 1
                     else:
-                        # relas[i][0][0] == 'B' 直接把i指向下一个B
                         break
                 length = i - span_start
                 max_label = label
@@ -446,7 +431,6 @@ def produce_column_1(relas, prd_idx):
 
 def produce_column_BE(relas, prd_idx):
     # used for simple crosstag
-    # 暂时是直接按照预测的B、I进行划分
     count = 0
     count2 = 0
     column = []
@@ -457,7 +441,6 @@ def produce_column_BE(relas, prd_idx):
         # print(i)
         # print(relas)
         if ((i + 1) == prd_idx):
-            # 其实谓词不影响
             column.append('(V*)')
             i += 1
         elif(rel == ['[prd]']):
@@ -472,22 +455,9 @@ def produce_column_BE(relas, prd_idx):
         else:
             s_rel = rel[0]
             position_tag = s_rel[0]
-            label = s_rel[2:]  # label直接按第一个边界的label
+            label = s_rel[2:]
             if(position_tag == 'I'):
-                # pdb.set_trace()
-                # if(i!=len(relas)-1 and len(relas[i+1])>0 and relas[i+1][0][0]=='I'):
-                #     column.append('('+ label + '*')
-                #     column.append('*' + ')')
-                #     i += 2
-                # else:
-                #     #     column.append('*')   # 直接把冲突的I删掉
-                #     #     i += 1
-                #     # count += 1
-                #     column.append('(' + label + '*' + ')') # turn into b
-                #     # column.append('*')   # 直接把冲突的I删掉
-                #     i += 1
-                #     count += 1
-                column.append('*')   # 直接把冲突的I删掉
+                column.append('*')
                 i += 1
                 count += 1
             else:
@@ -507,7 +477,7 @@ def produce_column_BE(relas, prd_idx):
                             break
                         else:
                             span_end = i
-                            label2 = relas[i][0][2:]  # 以后面那个作为label
+                            label2 = relas[i][0][2:]
                             i += 1
                             break
                 if (span_end != -1):
