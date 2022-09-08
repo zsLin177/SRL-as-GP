@@ -1,6 +1,18 @@
 # Fast and Accurate End-to-End Span-based Semantic Role Labeling as Word-based Graph Parsing
 This is the repo for SRLasSDGP, a novel approach to form span-based SRL as word-based graph parsing, to be presented at [COLING2022](https://coling2022.org/coling). A preprint of the paper can be found at the [following location on arxiv](https://arxiv.org/abs/2112.02970).
 
+## Abstract
+This paper proposes to cast end-to-end span-based SRL as a  word-based graph parsing task. 
+The major challenge is how to represent spans at the word level. 
+Borrowing ideas from research on Chinese word  segmentation and named entity recognition, 
+we propose and compare four different schemata of graph representation, i.e., BES, BE, BIES, and BII,
+among which we find that the BES schema performs the best. 
+We further gain interesting insights through detailed analysis. 
+Moreover, we propose a simple constrained Viterbi procedure to ensure the legality of the output  graph in the sense of SRL. 
+We conduct experiments on two widely used benchmark datasets, i.e., CoNLL05 and CoNLL12. 
+Results show that our word-based graph parsing approach achieves new state-of-the-art (SOTA) performance under the end-to-end setting, both without and with pre-trained language models (PLMs). 
+More importantly, our model can parse 669/252 sentences per second, without and with PLMs respectively. Under the simpler predicate-given setting, our approach, after certain model modification,  achieves comparable performance with previous SOTA.  
+
 ## Installation
 ```shell
 pip install -r  requirements.txt
