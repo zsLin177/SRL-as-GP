@@ -1,11 +1,14 @@
 # data files
 data
+tmp_srl_data
 exp
 conll05-original-style
 old_data
+bert-base-chinese
+xlnet*
 
 # bash scripts
-*.sh
+*run*.sh
 
 # docs
 docs/_build
@@ -14,27 +17,26 @@ docs/_build
 build
 dist
 *.egg-info
-load_and_parse_forcup.py
+load_and_parse_forcup*
+bert-*
+roberta-*
+chinese-*
+*.jpg
+draw.py
+*.final
 
 # experimental results
 exp
 results
-bert-*
-roberta-large
-chinese-roberta-wwm-ext-large
-xlnet*
 
-# log and config files
+# log files
 *.log
-*.ini
 *.conllu
 *.out
 *.07
-*.pred
-*.txt
-*.final
-*.jpg
-draw.py
+*pred
+*final
+gnn-conll05-topk-woPLMs
 
 # pycache
 __pycache__
@@ -43,7 +45,6 @@ __pycache__
 *.pkl
 *.pt
 tgt_temp_*
-
 # hidden files
 .*
 

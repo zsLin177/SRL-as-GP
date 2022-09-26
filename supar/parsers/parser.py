@@ -370,7 +370,7 @@ def produce_column_BE(relas, prd_idx):
 
 
 def get_results(gold_path, pred_path, file_seed, task, schema):
-    _SRL_CONLL_EVAL_SCRIPT = 'conll05-original-style/eval.sh'
+    _SRL_CONLL_EVAL_SCRIPT = 'scripts/eval.sh'
     tgt_temp_file = 'tgt_temp_file' + file_seed
     if schema == 'BE':
         change_BE(pred_path, tgt_temp_file, task)
