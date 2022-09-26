@@ -19,15 +19,18 @@ pip install -r  requirements.txt
 ```
 
 ## Preprocess data
-Under construction.
+Run the following command to get the data in form of BES. The [PTB](http://catalog.ldc.upenn.edu/LDC99T42) is needed.
+```shell
+bash scripts/conll05.sh PTB=<path-to-ptb> SRL=data
+```
 
 ## Training and Prediction
 ### Training models without pre-trained language models
 ```
 python -m supar.cmds.vi_SRL train -b \
-        --train data/BES/conll05/BES-train.conllu \
-        --dev data/BES/conll05/BES-dev.conllu \
-        --test data/BES/conll05/BES-wsj.conllu \
+        --train data/conll05/train-BES.conllu \
+        --dev data/conll05/dev-BES.conllu \
+        --test data/conll05/test-BES.conllu \
         --batch-size 3000 \
         --n-embed 100 \
         --feat lemma,char \
@@ -48,10 +51,10 @@ python -m supar.cmds.vi_SRL train -b \
 
 ### Prediction and Evaluation
 ```
-python -m supar.cmds.vi_SRL predict --data data/BES/conll05/BES-wsj.conllu \
+python -m supar.cmds.vi_SRL predict --data data/conll05/test-BES.conllu \
         -p exp/exp1/model \
         --pred BES-wsj.pred \
-        --gold data/wsj.final \
+        --gold data/conll05/conll05.test.props.gold.txt \
         --task 05 \
         --schema BES \
         --vtb \
@@ -65,9 +68,9 @@ python -m supar.cmds.vi_SRL predict --data data/BES/conll05/BES-wsj.conllu \
 git checkout finetune-given_prd
 # training
 python -m supar.cmds.vi_srl train -b \
-        --train data/BES/conll05/BES-train.conllu \
-        --dev data/BES/conll05/BES-dev.conllu \
-        --test data/BES/conll05/BES-wsj.conllu \
+        --train data/conll05/train-BES.conllu \
+        --dev data/conll05/dev-BES.conllu \
+        --test data/conll05/test-BES.conllu \
         --batch-size 500 \
         --encoder bert \
         --itp 0.06 \
@@ -80,10 +83,10 @@ python -m supar.cmds.vi_srl train -b \
         -d 4 
 
 # prediction and evaluation
-python -m supar.cmds.vi_srl predict --data data/BES/conll05/BES-wsj.conllu \
+python -m supar.cmds.vi_srl predict --data data/conll05/test-BES.conllu \
         -p exp/exp2/model \
         --pred BES-wsj-bert.pred \
-        --gold data/wsj.final \
+        --gold data/conll05/conll05.test.props.gold.txt \
         --task 05 \
         --schema BES \
         --vtb \

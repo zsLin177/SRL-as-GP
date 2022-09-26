@@ -1,5 +1,6 @@
 # data files
 data
+tmp_srl_data
 exp
 conll05-original-style
 old_data
@@ -7,7 +8,7 @@ bert-base-chinese
 xlnet*
 
 # bash scripts
-*.sh
+*run*.sh
 
 # docs
 docs/_build
