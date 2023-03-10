@@ -1,5 +1,5 @@
 # Fast and Accurate End-to-End Span-based Semantic Role Labeling as Word-based Graph Parsing
-This is the repo for SRLasSDGP, a novel approach to form span-based SRL as word-based graph parsing, to be presented at [COLING2022](https://coling2022.org/coling). A preprint of the paper can be found at the [following location on arxiv](https://arxiv.org/abs/2112.02970).
+This is the repo for SRLasSDGP, a novel approach to form span-based SRL as word-based graph parsing, to be presented at [COLING2022](https://coling2022.org/coling). The paper can be found at [here](https://aclanthology.org/2022.coling-1.365/).
 
 ## Abstract
 This paper proposes to cast end-to-end span-based SRL as a  word-based graph parsing task. 
